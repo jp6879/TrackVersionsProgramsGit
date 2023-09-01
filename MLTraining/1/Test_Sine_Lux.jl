@@ -1,7 +1,7 @@
 using Lux, DiffEqFlux, DifferentialEquations, Optimization, OptimizationOptimJL, Random, Plots, ComponentArrays,OptimizationOptimisers,OptimizationFlux
 rng = Random.default_rng()
-u0 = Float32.([1.0])
-datasize = 30
+u0 = Float32.([0.0])
+datasize = 500
 tspan = (0.0f0, 1.5f0)
 tsteps = range(tspan[1], tspan[2], length = datasize)
 
@@ -16,8 +16,9 @@ ode_data = Array(ode_data)
 
 
 
-dudt2 = Lux.Chain(Lux.Dense(1 => 25, celu),
-                Lux.Dense(25 => 1, celu),
+dudt2 = Lux.Chain(Lux.Dense(1 => 25, tanh),
+                Lux.Dense(25 => 10),
+                Lux.Dense(10 => 1, tanh),
                 x -> sin.(x))
 
 p, st = Lux.setup(rng, dudt2)
@@ -55,7 +56,7 @@ optf = Optimization.OptimizationFunction((x, p) -> loss_neuralode(x), adtype)
 optprob = Optimization.OptimizationProblem(optf, pinit)
 
 result_neuralode = Optimization.solve(optprob,
-                                       ADAM(0.005),
+                                       ADAM(0.001),
                                        callback = callback,
                                        maxiters = 300)
 
