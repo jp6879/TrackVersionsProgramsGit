@@ -6,9 +6,9 @@ tspan = (0.0f0, 1.5f0)
 tsteps = range(tspan[1], tspan[2], length = datasize)
 
 function trueODEfunc(du, u, p, t)
-    du[1] = cos(2π*t)
+    ω , A = [1.0, 1.0]
+    du[1] =  A*cos(2π*ω*t)
 end
-
 prob_trueode = ODEProblem(trueODEfunc, u0, tspan)
 ode_data = solve(prob_trueode, Tsit5(), saveat = tsteps)
 plot(ode_data)
@@ -17,12 +17,13 @@ ode_data = Array(ode_data)
 
 
 dudt2 = Lux.Chain(Lux.Dense(1 => 25, tanh),
-                Lux.Dense(25 => 10),
-                Lux.Dense(10 => 1, tanh),
-                x -> sin.(x))
+                Lux.Dense(25 => 10, relu),
+                Lux.Dense(10 => 1, tanh))
 
-p, st = Lux.setup(rng, dudt2)
 prob_neuralode = NeuralODE(dudt2, tspan, Tsit5(), saveat = tsteps)
+p, st = Lux.setup(rng, dudt2)
+                
+
 
 function predict_neuralode(p)
   Array(prob_neuralode(u0, p, st)[1])
@@ -59,8 +60,7 @@ result_neuralode = Optimization.solve(optprob,
                                        ADAM(0.001),
                                        callback = callback,
                                        maxiters = 300)
-
-optprob2 = remake(optprob,u0 = result_neuralode.u)
+                                       optprob2 = remake(optprob,u0 = result_neuralode.u)
 
 result_neuralode2 = Optimization.solve(optprob2,
                                         Optim.BFGS(initial_stepnorm=0.01),
