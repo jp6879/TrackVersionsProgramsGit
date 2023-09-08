@@ -2,7 +2,7 @@ using Lux, DiffEqFlux, DifferentialEquations, Optimization, OptimizationOptimJL,
 rng = Random.default_rng()
 u0 = Float32.([0.0])
 datasize = 500
-tspan = (0.0f0, 1.5f0)
+tspan = (0.0f0, 1f0)
 tsteps = range(tspan[1], tspan[2], length = datasize)
 
 function trueODEfunc(du, u, p, t)
@@ -16,9 +16,10 @@ ode_data = Array(ode_data)
 
 
 
-dudt2 = Lux.Chain(Lux.Dense(1 => 25, tanh),
-                Lux.Dense(25 => 10, relu),
-                Lux.Dense(10 => 1, tanh))
+dudt2 = Lux.Chain(Lux.Dense(1 => 30, rrelu),
+Lux.Dense(30 => 30, rrelu),
+Lux.Dense(30 => 25, tanh_fast),
+Lux.Dense(25 => 1, tanh_fast))
 
 prob_neuralode = NeuralODE(dudt2, tspan, Tsit5(), saveat = tsteps)
 p, st = Lux.setup(rng, dudt2)

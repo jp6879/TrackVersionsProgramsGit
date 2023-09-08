@@ -15,15 +15,64 @@ begin
 	using ProgressMeter
 end
 
-# ╔═╡ bacd0c00-48d8-11ee-1ca1-e3fdc1814518
-md"# Seguimos con el modelado de las funciones sinusoidales usando redes neuronales
+# ╔═╡ c3e1b2be-3ae9-4cfb-925d-2f9a095a6360
+md"# Modelado de función sinusoidal utilizando Recurrent Neural Networks (RNN)
 
-En este caso vamos a utilizar una red neuronal recurrente RNN
+Las redes neuronales recurrentes o RNNs són una familia de redes neuronales para procesamiento de secuencias de datos. Estas estan especializadas para procesar una secuencia de valores $x^{(1)},...,x^{(\tau)}$. Estas pueden procesar secuencias mucho mas largas que para redes sin esta especialización. Muchas también pueden aprender secuencias de longitud variable.
+
+Estas toman ventaja de la idea de compartir parámetros en a través de diferentes partes del modelo. Esto hace posible extender y aplicar el modelo a diferentes ejemplos y generalizar a través de los mismos. Esto es útil cuando una parte especifica de la información puede ocurrir en múltiples posiciones en una secuencia. Por ejemplo dos oraciones Yo fui a Nepal en 2009 y En 2009 Yo fui a Nepal. Si preguntamos a un modelo de machine learning cuando el narrador fue a Nepal, tenemos que reconocer el 2009 como información relevante en cualquiera de los 2 casos.
+
+Supongamos que entrenamos una red Feedfoward para procesar oraciones de una longitud fija. Tradicionalmente estas tienen distintos parámetros para cada caso de entrada, por lo tanto deberían aprender todas las reglas del lenguaje separadamente en cada posición de la oración. En contraste las RNNs comparten los mismos pesos a través de varios pasos de tiempo.
+
+Las RNNs comparten parámetros de la siguiente forma. Cada miembro de la salida es función de los previos miembros de la salida. Cada miembro de la salida es producido utilizando la misma regla de actualización aplicada a las salidas previas.
+
+Por simplicidad suponemos que una RNN opera con secuencias que continenen vectores $x^{(t)}$ con el ínidice de paso de tiempo $t$ en un rango de $1$ a $\tau$. (el tiempo no tiene por que ser tiempo en la vida real sino en la secuencia)
+
+A las RNN es conveniente representarlas como grafos que tienen una esctructura en cadena repetitiva. Supongamos que tenemos una ecuación para los valores de la capas ocultas. El estado de esta capa oculta dependerá también del estado de las capas ocultas anteriores así como del input externo $x^{(t)}$. Entonces tenemos
+
+$\begin{equation}
+    h^{(t)} = f(h^{(t-1)},x^{(t)};\theta),
+\end{equation}$
+
+donde $\theta$ son parámetros que caracterizan a $f$ en todos los pasos de tiempo.
+
+Cuando entrenamos redes de este tipo necesitamos realizar una predicción del futuro con información del pasado, estas redes utilizan $h^{(t)}$ como una forma resumen de los aspectos relevantes de la secuencia hasta el paso $t$. Una de las situaciones en las que se pueden usar es cuando queremos que $h^(t)$ tenga la suficiente información como para recuperar aspectos de la secuencia de entrada.
 "
 
 # ╔═╡ 02d53bd5-b00e-442a-ab69-d7796f9b9b93
 md"Para estas redes se utilizan secuencias para el aprendizaje de la red, para ello vamos a tomar un intervalo de 10 en una escala de tiempo y vamos a dejar que la red prediga en el valor en el paso 11 y así.
 Primero que todo creamos las secuencias de entrenamiento"
+
+# ╔═╡ ce8e9612-bd5b-4772-b24d-e6c0c885c199
+md"En un gráfo de RNN tenémos que para cada valor de la secuencia de entrada hay una salida $o$, de estas se calcula la función Costo ($L^{(t)}$) y se actualizan los pesos. Así para una secuencia desde $t = 1$ hasta $t = \tau$ tenemos la siguiente ecuación de actualización
+
+$\begin{align}
+        a^{(t)} &= b + W h^{(t-1)} + U x^{(t)} \\
+        h^{(t)} &= f_{activación}(a{(t)}) \\
+        o^{(t)} &= c + V h^{(t)} \\
+        \hat{y}^{(t)} &= o^{(t)} .
+\end{align}$
+
+donde los parámetros son los sesgos $b$ y $c$ junto con las matrices $U$, $V$ y $W$ respectivamente para las conexiones input to hidden - hidden to output - hidden to hidden. El costo total para una secuencia $x$ que debería resultar en una secuencia $y$ es la suma de todos los costos en todos los pasos de tiempo."
+
+# ╔═╡ 4fc26061-2625-4b74-904f-921bcfefc6c9
+md"# Backpropagation through time
+
+Para entrenar una RNN uno simplemente utiliza los algoritmos de back-propagation vistos. Ahora el algoritmo se llama back propagation through time. La manera de obtener los gradientes es utilizar la regla de la cadena de $L$ con respecto a cada parámetro del nodo $N$. Así en cada nodo de la red que se tenía de ejemplo con los parámetros $b$, $c$, $U$, $V$ y $W$
+
+$\begin{align}
+\nabla_{\boldsymbol{h}^{(t)}} L & =\left(\frac{\partial \boldsymbol{h}^{(t+1)}}{\partial \boldsymbol{h}^{(t)}}\right)^{\top}\left(\nabla_{\boldsymbol{h}^{(t+1)}} L\right)+\left(\frac{\partial \boldsymbol{o}^{(t)}}{\partial \boldsymbol{h}^{(t)}}\right)^{\top}\left(\nabla_{\boldsymbol{o}^{(t)}} L\right) \\
+& =\boldsymbol{W}^{\top}\left(\nabla_{\boldsymbol{h}^{(t+1)}} L\right) \operatorname{diag}\left(1-\left(\boldsymbol{h}^{(t+1)}\right)^2\right)+\boldsymbol{V}^{\top}\left(\nabla_{\boldsymbol{o}^{(t)}} L\right) \\
+\nabla_c L & =\sum_t\left(\frac{\partial \boldsymbol{o}^{(t)}}{\partial \boldsymbol{c}}\right)^{\top} \nabla_{\boldsymbol{o}^{(t)}} L=\sum_t \nabla_{\boldsymbol{o}^{(t)}} L \\
+\nabla_{\boldsymbol{b}} L & =\sum_t\left(\frac{\partial \boldsymbol{h}^{(t)}}{\partial \boldsymbol{b}^{(t)}}\right)^{\top} \nabla_{\boldsymbol{h}^{(t)}} L=\sum_t \operatorname{diag}\left(1-\left(\boldsymbol{h}^{(t)}\right)^2\right) \nabla_{\boldsymbol{h}^{(t)}} L \\
+\nabla_{\boldsymbol{V}} L & =\sum_t \sum_i\left(\frac{\partial L}{\partial o_i^{(t)}}\right) \nabla_{\boldsymbol{V}} \boldsymbol{o}_i^{(t)}=\sum_t\left(\nabla_{\boldsymbol{o}^{(t)}} L\right) \boldsymbol{h}^{(t)^{\top}} \\
+\nabla_{\boldsymbol{W}} L & =\sum_t \sum_i\left(\frac{\partial L}{\partial h_i^{(t)}}\right) \nabla_{\boldsymbol{W}^{(t)}} h_i^{(t)} \\
+& =\sum_t \operatorname{diag}\left(1-\left(\boldsymbol{h}^{(t)}\right)^2\right)\left(\nabla_{\boldsymbol{h}^{(t)}} L\right) \boldsymbol{h}^{(t-1)^{\top}} \\
+\nabla_{\boldsymbol{U}} L & =\sum_t \sum_i\left(\frac{\partial L}{\partial h_i^{(t)}}\right) \nabla_{\boldsymbol{U}^{(t)}} h_i^{(t)} \\
+& =\sum_t \operatorname{diag}\left(1-\left(\boldsymbol{h}^{(t)}\right)^2\right)\left(\nabla_{\boldsymbol{h}^{(t)}} L\right) \boldsymbol{x}^{(t)^{\top}}
+\end{align}$
+
+Con esto ya podemos aplicar un algoritmo de backpropagation general."
 
 # ╔═╡ a36edfac-2091-47b5-9ce6-74cf4ea4e801
 function data_maker(x, len_seq)
@@ -46,11 +95,12 @@ end
 
 # ╔═╡ df1dd782-b220-4dbb-937e-d2c4d1719040
 begin
-	len_sequence = 10
-	t_train = hcat(0:0.05:20)
+	len_sequence = 110 # Elegimos la longitud de la secuencias esto es el número en el que se llega a un periodo de la función
+	# Es decir le damos que mantenga la información del periodo anterior
+	t_train = hcat(0:0.05:20) # Tomamos un intervalo de tiempo largo comparado con la FNN anterior, además no lo normalizamos
 	t_train = Float32.(t_train)
-	t_train = t_train[1:end]
-	t_train_data, t_test_data = data_maker(t_train, len_sequence)
+	t_train = t_train[1:end] # Esto es solo para dejarlo como vector
+	t_train_data, t_test_data = data_maker(t_train, len_sequence) # Hacemos las secuencias de entrenamiento y test
 end
 
 # ╔═╡ dc044205-21ec-4f87-a667-f6adb4f9accb
@@ -58,7 +108,7 @@ md"Otra vez tenenmos la función seno con ruido"
 
 # ╔═╡ 6563d8ea-2bb7-441a-9d11-940bce0da9f9
 function Noise_Sine(x)
-    return sin(x)
+    return sin(x) + rand(Normal(0, 0.05))
 end
 
 # ╔═╡ 0b910455-566a-4a93-b0eb-39acb07179e0
@@ -66,7 +116,7 @@ begin
 	y_train = Noise_Sine.(t_train)
 	y_train = Float32.(y_train)
 	y_train = y_train[1:end]
-	y_train_data, y_test_data = data_maker(y_train, len_sequence)
+	y_train_data, y_test_data = data_maker(y_train, len_sequence); # Hacemos lo mismo con los valores de salida y(t)
 end
 
 # ╔═╡ 9c66596c-386c-4176-84b8-3878edc9f9e1
@@ -90,7 +140,10 @@ function loss(x, y)
 md"Ahora agrupemos los datos para ser entrenados"
 
 # ╔═╡ fa029e4f-a4b0-4580-8036-40ee934ecbce
-data = zip(t_train_data,y_train_data)
+begin
+	data = zip(t_train_data, y_train_data);
+	data_test = zip(t_test_data, y_test_data);
+end
 
 # ╔═╡ ed902a2c-3d34-4616-98de-84d0b3048149
 md"Guardamos los parámetros y el método de optimización"
@@ -101,27 +154,121 @@ begin
 	opt= Adam(1e-3)
 end
 
+# ╔═╡ a0ec3c44-b273-43bf-b453-8e380842b19d
+begin
+	lossRNN = []
+	lossRNN_test = []
+	accuracy_train = []
+	accuracy_test = []
+	function accuracy()
+	    num_correct = 0
+	    num_correct_test = 0
+	
+	    # Transform into a flat Vector{Float32} the Vector{Vector{Float32}}
+	    flat_vector_train = reduce(vcat,reduce(vcat,t_train_data))
+	    flat_vector_test = reduce(vcat,reduce(vcat,t_test_data))
+	    flat_y_train = reduce(vcat,reduce(vcat,y_train_data))
+	    flat_y_test = reduce(vcat,reduce(vcat,y_test_data))
+	
+	    for i in 1:length(flat_vector_train)
+	        if abs(modelRNN([flat_vector_train[i]])[1] - flat_y_train[i]) < 0.1
+	            num_correct += 1
+	        end
+	    end
+	
+	    for i in 1:length(flat_vector_test)
+	        if abs(modelRNN([flat_vector_test[i]])[1] - flat_y_test[i]) < 0.1
+	            num_correct_test += 1
+	        end
+	    end
+	
+	    return (num_correct/length(flat_vector_train)) * 100.0, (num_correct_test/length(flat_vector_test)) * 100.0
+	end
+end
+
 # ╔═╡ 23d399dc-0f8c-453b-aac8-68fcd5c02142
-for _ in 1:500
-    Flux.train!(loss, ps, data, opt)
+begin
+	iter = 0
+	epoch_iter = 0
+	cb = function()
+	    global iter
+	    global epoch_iter
+	    iter += 1
+	    # Record Loss
+	    if iter % length(data) == 0
+	        epoch_iter += 1
+	        actual_loss = 0
+	        actual_loss_test = 0
+	
+	        for (x, y) in data
+	            actual_loss += loss(x, y)
+	        end
+	
+	        for (x, y) in data_test
+	            actual_loss_test += loss(x, y)
+	        end
+	
+	        accuracytra, accuracytst = accuracy()
+	
+	        if epoch_iter % 20 == 0
+	            println("Epoch $epoch_iter || Loss = $actual_loss")
+	        end
+	        push!(lossRNN, actual_loss)
+	        push!(lossRNN_test, actual_loss_test)
+	        push!(accuracy_train, accuracytra)
+	        push!(accuracy_test, accuracytst)
+	    end
+	end
+	
+	for _ in 1:1000
+	    Flux.train!(loss, ps, data, opt, cb = cb)
+	end
 end
 
 # ╔═╡ a1124849-191b-4c47-967b-691fd46f8c35
-begin
-	function Plotall()
-	    pl = scatter([x[1] for x in t_train_data[1]], [x[1] for x in y_train_data[1]], label="Data",color = "red")
-	    scatter!([x[1] for x in t_train_data[1]], [modelRNN(x)[1] for x in t_train_data[1]], label="Prediction",color = "blue")
-	    for i in 2:length(t_train_data)
-	        scatter!([x[1] for x in t_train_data[i]], [x[1] for x in y_train_data[i]],color = "red",label = false)
-	        scatter!([x[1] for x in t_train_data[i]], [modelRNN(x)[1] for x in t_train_data[i]],color = "blue",label = false)
-	    end
-		pl
+function Plotall()
+    pl = scatter([x[1] for x in t_train_data[1]], [x[1] for x in y_train_data[1]], label="Data",color = "red")
+    scatter!([x[1] for x in t_test_data[1]], [x[1] for x in y_test_data[1]], label="Data",color = "purple")
+    scatter!([x[1] for x in t_train_data[1]], [modelRNN(x)[1] for x in t_train_data[1]], label="Prediction",color = "blue")
+    scatter!([x[1] for x in t_test_data[1]], [modelRNN(x)[1] for x in t_test_data[1]], label="Test Prediction",color = "orange")
+
+    for i in 2:length(t_train_data)
+        scatter!([x[1] for x in t_train_data[i]], [x[1] for x in y_train_data[i]],color = "red",label = false)
+        scatter!([x[1] for x in t_test_data[i]], [x[1] for x in y_test_data[i]],color = "purple",label = false)
+        scatter!([x[1] for x in t_train_data[i]], [modelRNN(x)[1] for x in t_train_data[i]],color = "blue",label = false)
+        scatter!([x[1] for x in t_test_data[i]], [modelRNN(x)[1] for x in t_test_data[i]],color = "orange",label = false)
 	end
-	Plotall()
+
+	pl
+	
 end
+
+# ╔═╡ 1dc749c2-8886-4da4-b4db-96d38441c3c3
+Plotall()
 
 # ╔═╡ 284cb2b8-0cc2-483d-ae9a-31cb3634a9ac
 md"Si nos fijamos la red predice los valores bien en un rango, pero necesita mucho mas entrenamiento que una red convencional, no pude mejorar esta red."
+
+# ╔═╡ a72bb3de-7e37-420c-a1f9-8617705d3910
+plot(lossRNN, label="Training Loss", title="Loss",xlabel = "Epochs", ylabel = "Loss")
+
+# ╔═╡ c6d7c2c5-3fa3-47a9-87bc-f87345ed5188
+plot(lossRNN_test, label="Test Loss",xlabel="Epochs", ylabel = "Loss")
+
+# ╔═╡ 950d9481-9fde-4c96-ad02-c2aec460d844
+begin
+	plot(accuracy_train, label="Training Accuracy", title="Accuracy",xlabel = "Epochs", ylabel = "Accuracy")
+	println("Maximum accuracy in training: ", maximum(accuracy_train))
+end
+
+# ╔═╡ 611d0fdb-1671-42c3-bf56-bd88a1f603c6
+md"Mejoró con respecto a la FNN"
+
+# ╔═╡ b94f102a-7b4f-4e31-b6e1-bd8c3aecc437
+begin
+	plot(accuracy_test, label="Test Accuracy",xlabel = "Epochs", ylabel = "Accuracy") # Esto es un poco engañoso por que realmente son pocos puntos de testeo
+	println("Maximum accuracy in test: ", maximum(accuracy_test))
+end
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -1656,9 +1803,11 @@ version = "1.4.1+0"
 """
 
 # ╔═╡ Cell order:
-# ╟─bacd0c00-48d8-11ee-1ca1-e3fdc1814518
 # ╠═d5428ae3-aef4-45c9-b106-0e9563d5c942
+# ╟─c3e1b2be-3ae9-4cfb-925d-2f9a095a6360
 # ╟─02d53bd5-b00e-442a-ab69-d7796f9b9b93
+# ╟─ce8e9612-bd5b-4772-b24d-e6c0c885c199
+# ╟─4fc26061-2625-4b74-904f-921bcfefc6c9
 # ╠═a36edfac-2091-47b5-9ce6-74cf4ea4e801
 # ╠═df1dd782-b220-4dbb-937e-d2c4d1719040
 # ╟─dc044205-21ec-4f87-a667-f6adb4f9accb
@@ -1673,8 +1822,15 @@ version = "1.4.1+0"
 # ╠═fa029e4f-a4b0-4580-8036-40ee934ecbce
 # ╟─ed902a2c-3d34-4616-98de-84d0b3048149
 # ╠═e032275d-3af0-4664-8d57-d489b7c86319
+# ╠═a0ec3c44-b273-43bf-b453-8e380842b19d
 # ╠═23d399dc-0f8c-453b-aac8-68fcd5c02142
 # ╠═a1124849-191b-4c47-967b-691fd46f8c35
+# ╠═1dc749c2-8886-4da4-b4db-96d38441c3c3
 # ╟─284cb2b8-0cc2-483d-ae9a-31cb3634a9ac
+# ╠═a72bb3de-7e37-420c-a1f9-8617705d3910
+# ╠═c6d7c2c5-3fa3-47a9-87bc-f87345ed5188
+# ╠═950d9481-9fde-4c96-ad02-c2aec460d844
+# ╟─611d0fdb-1671-42c3-bf56-bd88a1f603c6
+# ╠═b94f102a-7b4f-4e31-b6e1-bd8c3aecc437
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
