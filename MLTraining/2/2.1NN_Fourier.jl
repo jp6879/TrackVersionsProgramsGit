@@ -69,7 +69,8 @@ freq_sim = freq_sim./maximum(freq_sim) # Normalizamos las frecuencias de entrena
 # Los datos para validar son
 F_valid = reshape(Float32.(abs.(Fs_valid)), 1, :)
 freq_valid = reshape(Float32.(ωs_valid), 1, :)
-freq_valid = freq_valid./maximum(freq_valid) # Normalizamos las frecuencias de validación
+max = maximum(freq_valid)
+freq_valid = freq_valid./max # Normalizamos las frecuencias de validación
 
 # Cargmamos los datos de entrenamiento en el loader de Flux
 
@@ -123,17 +124,10 @@ cb = function()
     end
 end
 
-epochs = 4500
+epochs = 2000
 for _ in 1:epochs
     Flux.train!(loss, Flux.params(model, opt), train_loader, opt, cb = cb)
 end
-
-ac = accuracy(train_loader.data[1], train_loader.data[2])
-
-predict = model(freq_sim)[1,1:51]
-
-scatter(freq_sim[1,1:51], F_sim[1,1:51])
-scatter!(freq_sim[1,1:51], model(freq_sim)[1,1:51])
 
 # Como tenemos 100 secuencias vamos a ver cual de estas tiene mejor presición
 accuracys = []
@@ -152,9 +146,13 @@ idxmax = findmax(accuracys)[2]
 init = 1 + idxmax*51
 final = 51 + idxmax*51
 
+predict = model(freq_sim)[1,init:final]
+
+freq_sim = freq_sim.*max
+
 # Extraemos los datos de esta secuencia
 plot(freq_sim[1,init:final], F_sim[1,init:final])
-plot!(freq_sim[1,init:final],model(freq_sim)[1,init:final])
+plot!(freq_sim[1,init:final],predict)
 
 # Graficamos los datos de entrenamiento y la predicción de la red neuronal
 scatter(freq_sim[1,:], F_sim[1,:], label="Datos de entrenamiento", xlabel="Frecuencia", ylabel="|F(f)|", title="Datos de entrenamiento")
@@ -167,7 +165,3 @@ scatter!(freq_valid[1,:], model(freq_valid)[1,:], label="Predicción de la red n
 # Veamos el loss en funcion de la épocas para los datos de entrenamiento y validación
 plot(lossNN, label="Loss de entrenamiento", xlabel="Épocas", ylabel="Loss", title="Loss de entrenamiento")
 plot!(lossNN_valid, label="Loss de validación", xlabel="Épocas", ylabel="Loss", title="Loss de validación")
-
-# Veamos la presición de la red neuronal en función de las épocas
-plot(accuracy_train, label="Presición de entrenamiento", xlabel="Épocas", ylabel="Presición", title="Presición de entrenamiento")
-plot!(accuracy_valid, label="Presición de validación", xlabel="Épocas", ylabel="Presición", title="Presición de validación")
