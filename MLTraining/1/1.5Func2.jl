@@ -21,10 +21,10 @@ tspan = (t_train[1], t_train[end])
 display(plot(t_train[1,:], y_train[1,:], label = "g(t)", xlabel = "t", ylabel = "g(t)", title = "Función a simular", legend = :bottomright))
 
 # Creamos la funcion diferenciable con una red neuronal, vamos a probar usar Lux ya que dice que se recomienda por cuestiones de velocidad
-dudt = Chain(Dense(31 => 30, tanh_fast),
-            Dense(30 => 20, tanh_fast),
-            Dense(20 => 15, tanh_fast),
-            Dense(15 => 31, tanh_fast)) # Creamos el modelo que va a ser nuestra función diferenciada
+dudt = Flux.Chain(Flux.Dense(31 => 30, tanh_fast),
+            Flux.Dense(30 => 20, tanh_fast),
+            Flux.Dense(20 => 15, tanh_fast),
+            Flux.Dense(15 => 31, tanh_fast)) # Creamos el modelo que va a ser nuestra función diferenciada
 
 diffeqarray_to_array(x) = reshape(x, size(x)[1:2]) # Esto acomoda la solución de la EDO en un arreglo de 2 dimensiones 21 x length(trange)
 

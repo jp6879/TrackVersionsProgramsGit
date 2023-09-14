@@ -12,10 +12,10 @@ y_train = Float32.(g.(t_train))
 tspan = (0.0f0 , 1.0f0)
 # Creamos el modelo de NODE. Para eso primero hacemos la NN. Usamos una inicialización de pesos no convencional
 
-dudt = Lux.Chain(Base.Fix1(broadcast, cos),
-                Lux.Dense(1 => 32, cos; init_weight=truncated_normal(; std=1e-4)),
-                Lux.Dense(32 => 32, cos; init_weight=truncated_normal(; std=1e-4)),
-                Lux.Dense(32 => 1; init_weight=truncated_normal(; std=1e-4)))
+dudt = Lux.Chain(Lux.Dense(1 => 30, tanh_fast),
+                    Lux.Dense(30 => 20, tanh_fast),
+                    Lux.Dense(20 => 15, tanh_fast),
+                    Lux.Dense(15 => 1, tanh_fast))
 
 # Extreamos los parámetros y los estados
 
