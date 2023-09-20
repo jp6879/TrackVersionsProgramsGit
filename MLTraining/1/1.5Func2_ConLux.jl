@@ -15,7 +15,7 @@ tspan = (0.0f0 , 1.0f0)
 dudt = Lux.Chain(Lux.Dense(1 => 30, tanh_fast),
                     Lux.Dense(30 => 20, tanh_fast),
                     Lux.Dense(20 => 15, tanh_fast),
-                    Lux.Dense(15 => 1, tanh_fast))
+                    Lux.Dense(15 => 20, tanh_fast))
 
 # Extreamos los parámetros y los estados
 
@@ -25,6 +25,14 @@ ps, st = Lux.setup(rng, dudt)
 
 n_ode = NeuralODE(dudt, tspan, Tsit5(), saveat = 0f0:0.001f0:1f0, 
 reltol = 1e-3, abstol = 1e-3)
+
+diffeqarray_to_array(x) = reshape(x, size(x)[1:2]) # Esto acomoda la solución de la EDO en un arreglo de 2 dimensiones 21 x length(trange)
+
+model = Lux.Chain((u0, x, p = n_ode.p) -> n_ode(u0, x, p),
+                predict_neuralode,
+                Lux.Dense(20, 10),
+                Lux.Dense(10, 1)) # Esta f pasa por una capa densa para que la salida sea un número
+
 u0 = Float32[1.0]
 prediction = Array(n_ode(u0, ps, st)[1])
 
