@@ -4,7 +4,7 @@
 using Markdown
 using InteractiveUtils
 
-# ╔═╡ 2ef71799-1c40-4013-9f90-0825311cd6fe
+# ╔═╡ 19986999-fa37-4f11-8ab2-ebd87d9233e5
 begin
 	using Plots
 	using Distributions
@@ -14,7 +14,7 @@ begin
 	using QuadGK
 end
 
-# ╔═╡ 099f3880-67c6-44a3-afdb-40e38c04cdb7
+# ╔═╡ 86b00a58-e2a1-4518-9637-bbc00d99dbc5
 md"# Generación de datos RMN Hahn
 Vamos a intentar generar los datos de una señal obtenida mediante RMN utilizando una secuencia de control de Hahn. La señal total $S(t)$ tiene la forma
 
@@ -25,209 +25,143 @@ S(t) = \sum_l P(l)M_l(t),
 donde $P(l)$ es la distribución de tamaños de los compartimientos del objeto a analizar y $M_l(t)$ la magnetización proveniente de los espínes confinados en cada compartimiento.
 "
 
-# ╔═╡ 6daa2e91-3aa7-4795-96b9-73876492edd8
+# ╔═╡ 70513b75-24f1-4e8b-b271-d5594a976516
 md"En primer lugar importamos los paquetes utilizados"
 
-# ╔═╡ 940566a8-8f02-4e73-b2ba-7edd5372539d
-md"Podemos opcionalmente poner una semilla para asegurar la reproducibilidad"
+# ╔═╡ 955069de-439e-41fe-b89d-3a951e29c9df
+md"Necesitamos la función distribución LogNormal como modelo para la distribución de tamaño de los compartimentos, debido a que describe bien otros sistemas del Sistema Nervioso Central.
 
-# ╔═╡ f4091702-7f03-4189-92c6-64cd0a0da7c7
-Random.seed!(2);
+$\begin{equation}
+P(l)=\frac{1}{l \ln (\sigma) \sqrt{2 \pi}} e^{-\frac{\left(\ln (l)-\ln \left(l_c\right)\right)^2}{2 \ln (\sigma)^2}},
+\end{equation}$
 
-# ╔═╡ 2b21b694-5ef4-48f4-a506-8275e231f796
-md"Definimos constantes útiles para el experimento"
+donde $l_c$ es el tamaño medio del compartimento y $\sigma$ es el ancho de la distribución de probabilidad con respecto a su media."
 
-# ╔═╡ 137a9c25-dcb6-48a3-8f18-f81ca31385df
+# ╔═╡ e114588e-e0f3-4672-9923-049d6c886bf9
+function P(l,lc,σ)
+    return ( exp( -(log(l) - lc)^2 / (2σ^2) ) ) / (l*σ*sqrt(2π))
+end;
+
+# ╔═╡ 1ae5f410-e8cf-4270-9900-f7724eda7486
+md"Testeamos esta distribución para distintos valores de $\sigma$ y $l_c$"
+
+# ╔═╡ b5ad32ce-1ca1-4992-992a-9a36dba31ab9
+function TestP()
+    lcs = [0.7, 0.7, 1.0, 1.0, 3.7e-6, 2e-4]
+    σs = [0.2, 0.4, 0.2, 0.4, 1, 0.25]
+    l = range(0, 6, length=1000)
+    pl = plot(xlabel= L"l (\mu m)", ylabel= L"P(l)", legend=:best, title = "Distribución LogNormal")
+    for i in 1:length(lcs)
+        p = P.(l, lcs[i], σs[i])
+        plot!(pl, l, p, label=L"$lc$" * "= $(lcs[i]) "* L"μm\:" * L"$\sigma$" * "= $(σs[i])")
+    end
+    pl
+end;
+
+# ╔═╡ 166b79b2-7fb0-413a-80dd-14c7bb4e5853
+TestP()
+
+# ╔═╡ 09c061e1-9bed-4498-8936-7a887b932728
+md"Vamos a considerar una secuencia de control de RMN ”Hahn”
+
+$\begin{equation}
+\mathrm{M}_{l, \text { Hahn }}(t)=\exp \left\{-\gamma^2 G^2 D_0 \tau_c^2\left[t-\tau_c\left(3+\mathrm{e}^{-\frac{t}{\tau_c}}-4 \mathrm{e}^{-\frac{t}{2 \tau_c}}\right)\right]\right\}
+\end{equation}$
+
+donde $\tau_c = l_c^2 /\left(2 D_0\right)$ está asociado a la longitud de correlación $l_c$ que define el tamaño de la cavidad que restringe el proceso de difusión que experimentan los espines. $\gamma$ es el factor giromagnetico del espin nuclear del proton, $G$ el gradiente externo aplicado y $D_0$ el coeficiente de difusión.
+"
+
+# ╔═╡ e39c776f-2349-401d-8785-c6c163ea1993
 begin
-	# Constantes útiles
 	γ = 2.675e8  # Factor girómagetico del esín nuclear del proton (s⁻¹T⁻¹) de https://physics.nist.gov/cgi-bin/cuu/Value?gammap
 	G = 8.73e-7  # Gradiente externo (T/μm) de Validating NOGSE’s size distribution predictions in yeast cells Paper 1
 	D0 = 1e3 # Coeficiente de difusión (μm²/s) del Ejercico
 	# Voy a dejar todo en μm, s y T
-end
+end;
 
-# ╔═╡ f2df76be-de1d-44c4-9fe0-7d9c8e1bc898
-md"Generación de distribution log-normal, con parámetros lc y σ, en este caso lc es el tamaño medio del compartimiento y σ es la desviación estándar del tamaño del compartimiento
-Mientras que σ es el ancho de la distribution de probabilidad con respecto a su media.
-Una de las dudas es si σ va así o como σ_log puesto que en Julia la distribution log-normal
-Mismo con μ
-En julia LogNormal $p(x) =  \frac{exp( -\frac{(ln(x) - μ)²}{2σ²})}{xσ√(2π)}$
-N es el número de compartimientos que se quieren generar"
+# ╔═╡ 309d870f-74f6-49d9-823c-7d7845d3f2d5
+md"Necesitamos entonces esta función $M_{l,Hahn}$"
 
-# ╔═╡ 076339d3-1198-41ed-bcbe-269552ff9ccf
-function P(lc, σ, N)
-    μ = lc
-    data = rand(LogNormal(μ, σ), N)
-    return data
-end
-
-# ╔═╡ 1ca240f1-91b5-49f9-bd13-ac924fc5bd71
-md"Función M_l Magnetización de Hahn, para un tiempo t y un tamaño medio de compartimiento lc"
-
-# ╔═╡ 7bf6cdc2-2093-4f65-9035-7656285e733d
-function Ml_Hahn(t, lc)
-    τc = lc^2 / (2 * D0)
+# ╔═╡ 69ea91b0-f8c6-4287-958c-0f7c5421ca25
+# Función M_l Magnetización de Hahn, para un tiempo t y un tamaño medio de compartimiento lc
+function Ml_Hahn(t, l)
+    τc = l^2 / (2 * D0)
     term1 = -γ^2 * G^2 * D0 * τc^2
     term2 = t - τc * (3 + exp(-t / τc) - 4 * exp(-t / (2 * τc)))
     return exp(term1 * term2)
-end
+end;
 
-# ╔═╡ 5f63c382-18e3-4d8c-a1e9-df0223af4462
-# Hagamos una función P a mano
-function P_handmade(l,lc,σ)
-    #lc = log(lc) 
-    #σ = log(σ)
-    # Vienen de una variable aleatoria 
-    # de la cual su exponencial es de una distribucion normal y ahí si son la media y varianza usuales
-    # Si se pone el log en estas da una P negativa
-    return ( exp( -(log(l) - lc)^2 / (2σ^2)) ) / (l*σ*sqrt(2π))
-end
+# ╔═╡ c0031340-3092-47b3-bd5e-3596cd4300d5
+md"Testeamos esta función comparando con la figura 2a de [1] de la magnetización.
 
-# ╔═╡ 4fe94950-3d06-4e94-a377-2979a8088ed2
-md"Pruebo si P está bien simulada"
+[1] Zwick, A., Suter, D., Kurizki, G. &  ́Alvarez, G. A.. Preci-
+sion limits of tissue microstructure characterization by Magne-
+tic Resonance Imaging, Phys. Rev. Applied 14, 024088 (2020)
+doi.org/10.1103/PhysRevApplied.14.024088"
 
-# ╔═╡ 7adac289-8373-454a-8637-b1ba21f41220
-# Pruebo si P está bien simulada en ambos casos (lognormal y handmade)
-function Test_P()
-    μs = [0.7, 0.7, 1.0, 1.0, 2e-4, 2e-4] # Los tomamos solo como si fuesen parámetros, sin unidades
-    σs = [0.2, 0.4, 0.2, 0.4, 1, 0.25] # Mismo con esto
-    Ns = [200000, 200000, 200000, 200000, 200000, 200000] # Cantidad de compartimientos que se tendrían en cada imágen
-    pl = plot(xlabel="l (μm)", ylabel="P(l)", legend=:best)
-    xlims!(0, 6)
-    pl2 = plot(xlabel="l (μm)", ylabel="Cuentas / P(l)", legend=:best)
-    xlims!(0, 6)
-    for i in 1:length(μs)
-        p = P(μs[i], σs[i], Ns[i])
-        kde_result = kde(p)
-        plot!(pl,kde_result.x, kde_result.density, label = L"$\mu$" * "= $(μs[i])" * L" $\sigma$" * "= $(σs[i])")
-        histogram!(pl2, p, label=L"$\mu$" * "= $(μs[i])" * L"$\sigma$" * "= $(σs[i])", normed=true, bins = 55)
-    end
-    return pl, pl2
-end
-
-# ╔═╡ f4f3364f-d52b-498c-90e1-758fd3f4561f
-# Veamos esta función a mano
-function TestP_Handmade()
-    μs = [0.7, 0.7, 1.0, 1.0, 2e-4, 2e-4] # Los tomamos solo como si fuesen parámetros, sin unidades
-    σs = [0.2, 0.4, 0.2, 0.4, 1, 0.25] # Mismo con esto
-    l = range(0, 6, length=1000)
-    pl = plot(xlabel="l (μm)", ylabel="P(l)", legend=:best)
-    for i in 1:length(μs)
-        p = P_handmade.(l, μs[i], σs[i])
-        plot!(pl, l, p, label=L"$\mu$" * "= $(μs[i])" * L" $\sigma$" * "= $(σs[i])")
-    end
-    # Hay una que se pasa de 1, la integral dará 1?
-    p_sus(x) = ( exp( -(log(x) - 2e-4)^2 / (2*0.25^2)) ) / (x*0.25*sqrt(2π))
-    # Integramos p_sus desde 0 a inf
-    result, error = quadgk(p_sus, 0, Inf)
-	return pl, result
-end
-
-# ╔═╡ a99f1525-cc39-4363-86ba-cc46c674016e
-md"Testear que la Magnetizacion esta bien simulada comparando con
-Fig. 2(a) del paper [2] que muestra el comportamiento de M vs
-$(γ^2G^2D0)^{1/3}t$ en el rango [1, 100]. La figura muestra varias cur-
-vas, cada una esta asociada a un tamaño distinto de cavidad lc
-determinado por el tiempo de correlacion τc dado en el caption."
-
-# ╔═╡ 8cfff4e6-2081-4137-b9d7-9326f5af0e04
+# ╔═╡ ac9844d4-1fe1-44ea-81e8-4023227dd98c
 function Test_MHahn()
-    time = range(0, 100, length=50000)
+    time = range(0, 1, length=50000)
     factor = (γ^2 * G^2 * D0)^(1/3)
     list = [0.1, 0.15, 0.25, 0.4, 1.]
     lc__values = [sqrt(2 * D0 * value / factor) for value in list]
-
-    pl = plot(xlabel=L"(γ^2 G^2 D_0)^{1/3} t", ylabel= "Magnetización " * L"M(t)/M(0)", legend=:best)
+    pl = plot(xlabel=L"(γ^2 G^2 D_0)^{1/3} t", ylabel= "Magnetización " * L"M(t)/M(0)", legend=:best, title = "Magnetización de Hahn")
+    M = zeros(length(time))
     xlims!(0, 100)
     for lc in lc__values
+        # for i in 1:length(time)
+        #     M[i] = Ml_Hahn(collect(time)[i], lc)/ Ml_Hahn(0, lc)
+        # end
         M = [Ml_Hahn(t, lc) for t in time] ./ Ml_Hahn(0, lc)
         lc = Float32(lc)
-        plot!(pl,time.*factor, M, label=L"l_c" * "= $lc μm")
+        plot!(pl, time.*factor , M, label=L"l_c" * "= $lc μm")
     end
     pl
-end
+end;
 
-# ╔═╡ bee0a4a9-7b66-4fda-990a-d92086052bd6
-md"Utilice la Eq. (1) para calcular SHahn(t) para cada valor de t en su
-rango.
-- Para Pl(t) de Eq. (2) considerar un  ́unico valor lc = 3,7μm
-y generar varias distribuciones posibles variando σ.
-- Para Ml,Hahn considerar un  ́unico valor de τc correspondiente
-a $l_c$ = 3,7μm y $D_0 = 10^{−5}$ cm2/s (ojo con el cambio de unidades)"
-
-# ╔═╡ cc6bcf27-c5fc-4ed9-a29a-f760d2c492a6
-function S_han(lc, N, time_sim)
-    time = range(0, time_sim, length=1000)
-    σs = [0.01, 0.10, 0.25, 0.50, 1.0]
-    pl = plot(xlabel="t (s)", ylabel="Señal (U.A)", legend=:best)
-    xlims!(0, 0.05)
-    S = zeros(length(time))
-    M = zeros(length(time))
-
-    for σ in σs
-		p = P(lc, σ, N)
-		kde_result = kde(p)
-		p = kde_result.density
-        for i in 1:length(time)
-            M[i] = Ml_Hahn(collect(time)[i], lc)
-            for l in 1:length(p)
-                S[i] += p[l] * M[i]
-            end
-        end
-        plot!(pl,time, S, label=L"σ" * "= $σ")
-    end
-	
-#-----------------------------------------------------------------------------------
-    
-	# Veamos ahora con la función simulada a mano, vamos a tomar 2000 l's desde 0.05 hasta 20 μm
-    l = range(0.05, 20, length=N)
-    pl2 = plot(xlabel="t (s)", ylabel="Señal (U.A)", legend=:best)
-    xlims!(0, 0.05)
-    S2 = zeros(length(time))
-    M2 = zeros(length(time))
-    for σ in σs
-		p2 = P_handmade.(l, lc, σ)
-        for i in 1:length(time)
-            M2[i] = Ml_Hahn(collect(time)[i], lc)
-            for j in 1:length(l)
-                S2[i] += p2[j] * M2[i]
-            end
-        end
-        plot!(pl2,time, S2, label=L"σ" * "= $σ")
-    end
-	return pl,pl2
-end
-
-
-# ╔═╡ b7ce9379-9699-4a54-8a8d-fa46e106fb78
-pl1, pl2 = Test_P()
-
-# ╔═╡ 0492b541-850a-4207-9367-e9d315dcd2f1
-pl1
-
-# ╔═╡ 697e7d02-05ca-4f4f-9f06-b0be245948b3
-pl2
-
-# ╔═╡ 00bb6da7-a6f3-45e4-999f-bbf08d748e18
-pl5, resultado = TestP_Handmade()
-
-# ╔═╡ 32aedf9e-d4ff-4078-8acf-8424704a6860
-pl5
-
-# ╔═╡ 5a0adcc3-f4e6-4177-91dc-bd2691768afc
-println("La integral de la función p_sus da: ", resultado)
-
-# ╔═╡ 1f4de595-8898-4b8f-8558-4fd8e6fc4a59
+# ╔═╡ c504c4c7-2958-45d3-9f2e-b0ea7b0e8938
 Test_MHahn()
 
-# ╔═╡ ad5316c5-ab46-49b7-adea-8273f1030fff
-pl3, pl4 = S_han(3.7, 2000, 1)
+# ╔═╡ 6dcfcb1e-18da-4e04-9d22-3c1f2e9c63d0
+md" Utilizamos la ecuación $S(t) = \sum_l P(l)M_l(t),$, para cada valor de $t$ en un rango. Además decidimos cuantos compartimientos $l$ tomar y su rango de tamaños en $\mu m$ 
 
-# ╔═╡ 280833a8-95e2-44d8-9fb7-816b8672e291
-pl3
+Para $P(l)$ vamos a considerar un único valor $l_c=3,7 \mu m$ y generar varias distribuciones posibles variando $\sigma$.
 
-# ╔═╡ 6e294865-5930-4ec8-817a-dde0995006e5
-pl4
+Para $M_{l, \text { Hahn }}(t)$ vamos a considerar un único valor de $\tau_c$ correspondiente a $l_c=3,7 \mu m$ y $D_0=10^{3} \mathrm{~\mu m}^2 / \mathrm{s}$."
+
+# ╔═╡ d341d1e4-abbc-48bf-b983-28c65e021066
+# Función S_hanh(t)
+function S_han(lc, σ, N, l0, lf, t)
+    l = range(l0, lf, length = N)
+    P_l = P.(l,lc, σ) # Consideramos media lc
+    M_l = Ml_Hahn.(t, lc) # Calculamos solo para un τc, si se quiere cambiar esto reemplazar lc por l
+    S = sum(M_l .* P_l)
+    return S
+end
+
+# ╔═╡ 96a63b43-251c-443e-ab3d-5746be896208
+md"Testeamos esta función considerando lo anterior"
+
+# ╔═╡ 70f8934b-526f-4618-bc15-1e47d5851628
+function Test_S()
+	N = 2000 # Numero de compartimientos
+	lc = 3.7 # Tamaño medio del compartimiento
+	# Rango de compartimientos simulados
+	l0 = 0.05
+	lf = 50
+	time = range(0, 1, length = 10000) # Tiempo a simular
+	σs = [0.01, 0.10, 0.25, 0.50, 1.0] # Distitnos σ
+	pl = plot(xlabel="t (s)", ylabel="S(t) (U.A)", legend=:best, title = "Señal " * L"$S_{Hahn}$")
+	xlims!(0, 0.015)
+	for σ in σs
+	    St = S_han.(3.7, σ, 2000, l0, lf, time)
+	    plot!(pl, time, St, label = L"$\sigma$" * "= $(σ)")
+	end
+	pl
+end;
+
+# ╔═╡ a849e4d9-9e60-492a-8afe-15f852e2cff6
+Test_S()
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -240,7 +174,7 @@ QuadGK = "1fd47b50-473d-5c70-9696-f719f8f3bcdc"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 
 [compat]
-Distributions = "~0.25.100"
+Distributions = "~0.25.102"
 KernelDensity = "~0.6.7"
 LaTeXStrings = "~1.3.0"
 Plots = "~1.39.0"
@@ -253,7 +187,7 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.9.1"
 manifest_format = "2.0"
-project_hash = "044cac6c473f20337967869c55cd39a124026fc2"
+project_hash = "d13572b4e20a37b9e1455b5ded4943119ddf30a7"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -408,9 +342,9 @@ uuid = "8ba89e20-285c-5b6f-9357-94700520ee1b"
 
 [[deps.Distributions]]
 deps = ["FillArrays", "LinearAlgebra", "PDMats", "Printf", "QuadGK", "Random", "SpecialFunctions", "Statistics", "StatsAPI", "StatsBase", "StatsFuns", "Test"]
-git-tree-sha1 = "938fe2981db009f531b6332e31c58e9584a2f9bd"
+git-tree-sha1 = "3d5873f811f582873bb9871fc9c451784d5dc8c7"
 uuid = "31c24e10-a181-5473-b8eb-7969acd0382f"
-version = "0.25.100"
+version = "0.25.102"
 
     [deps.Distributions.extensions]
     DistributionsChainRulesCoreExt = "ChainRulesCore"
@@ -1090,9 +1024,9 @@ weakdeps = ["ChainRulesCore"]
 
 [[deps.StaticArrays]]
 deps = ["LinearAlgebra", "Random", "StaticArraysCore"]
-git-tree-sha1 = "d5fb407ec3179063214bc6277712928ba78459e2"
+git-tree-sha1 = "0adf069a2a490c47273727e029371b31d44b72b2"
 uuid = "90137ffa-7385-5640-81b9-e52037218182"
-version = "1.6.4"
+version = "1.6.5"
 weakdeps = ["Statistics"]
 
     [deps.StaticArrays.extensions]
@@ -1510,34 +1444,25 @@ version = "1.4.1+1"
 """
 
 # ╔═╡ Cell order:
-# ╟─099f3880-67c6-44a3-afdb-40e38c04cdb7
-# ╟─6daa2e91-3aa7-4795-96b9-73876492edd8
-# ╠═2ef71799-1c40-4013-9f90-0825311cd6fe
-# ╟─940566a8-8f02-4e73-b2ba-7edd5372539d
-# ╠═f4091702-7f03-4189-92c6-64cd0a0da7c7
-# ╟─2b21b694-5ef4-48f4-a506-8275e231f796
-# ╠═137a9c25-dcb6-48a3-8f18-f81ca31385df
-# ╟─f2df76be-de1d-44c4-9fe0-7d9c8e1bc898
-# ╠═076339d3-1198-41ed-bcbe-269552ff9ccf
-# ╟─1ca240f1-91b5-49f9-bd13-ac924fc5bd71
-# ╠═7bf6cdc2-2093-4f65-9035-7656285e733d
-# ╠═5f63c382-18e3-4d8c-a1e9-df0223af4462
-# ╟─4fe94950-3d06-4e94-a377-2979a8088ed2
-# ╠═7adac289-8373-454a-8637-b1ba21f41220
-# ╠═f4f3364f-d52b-498c-90e1-758fd3f4561f
-# ╟─a99f1525-cc39-4363-86ba-cc46c674016e
-# ╠═8cfff4e6-2081-4137-b9d7-9326f5af0e04
-# ╟─bee0a4a9-7b66-4fda-990a-d92086052bd6
-# ╠═cc6bcf27-c5fc-4ed9-a29a-f760d2c492a6
-# ╠═b7ce9379-9699-4a54-8a8d-fa46e106fb78
-# ╠═0492b541-850a-4207-9367-e9d315dcd2f1
-# ╠═697e7d02-05ca-4f4f-9f06-b0be245948b3
-# ╠═00bb6da7-a6f3-45e4-999f-bbf08d748e18
-# ╠═32aedf9e-d4ff-4078-8acf-8424704a6860
-# ╠═5a0adcc3-f4e6-4177-91dc-bd2691768afc
-# ╠═1f4de595-8898-4b8f-8558-4fd8e6fc4a59
-# ╠═ad5316c5-ab46-49b7-adea-8273f1030fff
-# ╠═280833a8-95e2-44d8-9fb7-816b8672e291
-# ╠═6e294865-5930-4ec8-817a-dde0995006e5
+# ╟─86b00a58-e2a1-4518-9637-bbc00d99dbc5
+# ╟─70513b75-24f1-4e8b-b271-d5594a976516
+# ╠═19986999-fa37-4f11-8ab2-ebd87d9233e5
+# ╟─955069de-439e-41fe-b89d-3a951e29c9df
+# ╠═e114588e-e0f3-4672-9923-049d6c886bf9
+# ╟─1ae5f410-e8cf-4270-9900-f7724eda7486
+# ╠═b5ad32ce-1ca1-4992-992a-9a36dba31ab9
+# ╠═166b79b2-7fb0-413a-80dd-14c7bb4e5853
+# ╟─09c061e1-9bed-4498-8936-7a887b932728
+# ╠═e39c776f-2349-401d-8785-c6c163ea1993
+# ╟─309d870f-74f6-49d9-823c-7d7845d3f2d5
+# ╠═69ea91b0-f8c6-4287-958c-0f7c5421ca25
+# ╟─c0031340-3092-47b3-bd5e-3596cd4300d5
+# ╠═ac9844d4-1fe1-44ea-81e8-4023227dd98c
+# ╠═c504c4c7-2958-45d3-9f2e-b0ea7b0e8938
+# ╟─6dcfcb1e-18da-4e04-9d22-3c1f2e9c63d0
+# ╠═d341d1e4-abbc-48bf-b983-28c65e021066
+# ╟─96a63b43-251c-443e-ab3d-5746be896208
+# ╠═70f8934b-526f-4618-bc15-1e47d5851628
+# ╠═a849e4d9-9e60-492a-8afe-15f852e2cff6
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
