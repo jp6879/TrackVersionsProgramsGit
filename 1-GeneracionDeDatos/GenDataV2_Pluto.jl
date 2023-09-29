@@ -12,6 +12,7 @@ begin
 	using LaTeXStrings
 	using KernelDensity
 	using QuadGK
+	using PlutoUI
 end
 
 # ╔═╡ 86b00a58-e2a1-4518-9637-bbc00d99dbc5
@@ -39,7 +40,7 @@ donde $l_c$ es el tamaño medio del compartimento y $\sigma$ es el ancho de la d
 
 # ╔═╡ e114588e-e0f3-4672-9923-049d6c886bf9
 function P(l,lc,σ)
-    return ( exp( -(log(l) - lc)^2 / (2σ^2) ) ) / (l*σ*sqrt(2π))
+    return ( exp( -(log(l) - log(lc))^2 / (2σ^2) ) ) / (l*σ*sqrt(2π))
 end;
 
 # ╔═╡ 1ae5f410-e8cf-4270-9900-f7724eda7486
@@ -47,8 +48,8 @@ md"Testeamos esta distribución para distintos valores de $\sigma$ y $l_c$"
 
 # ╔═╡ b5ad32ce-1ca1-4992-992a-9a36dba31ab9
 function TestP()
-    lcs = [0.7, 0.7, 1.0, 1.0, 3.7e-6, 2e-4]
-    σs = [0.2, 0.4, 0.2, 0.4, 1, 0.25]
+    lcs = [0.7, 0.7, 1.0, 1.0, 3.7]
+    σs = [0.2, 0.4, 0.2, 0.4, 0.1]
     l = range(0, 6, length=1000)
     pl = plot(xlabel= L"l (\mu m)", ylabel= L"P(l)", legend=:best, title = "Distribución LogNormal")
     for i in 1:length(lcs)
@@ -148,7 +149,7 @@ function Test_S()
 	lc = 3.7 # Tamaño medio del compartimiento
 	# Rango de compartimientos simulados
 	l0 = 0.05
-	lf = 50
+	lf = 10
 	time = range(0, 1, length = 10000) # Tiempo a simular
 	σs = [0.01, 0.10, 0.25, 0.50, 1.0] # Distitnos σ
 	pl = plot(xlabel="t (s)", ylabel="S(t) (U.A)", legend=:best, title = "Señal " * L"$S_{Hahn}$")
@@ -161,7 +162,102 @@ function Test_S()
 end;
 
 # ╔═╡ a849e4d9-9e60-492a-8afe-15f852e2cff6
-Test_S()
+Test_S() # En el gráfico se superponen algúnos
+
+# ╔═╡ 253fc6a4-f653-4447-bdff-19284069638e
+md"Ahora vamos a generar un conjunto de datos de entrada y salida para distintos σ, en principio estos tambien cambian
+con los numeros de compartimientos N, el tiempo que se simula t_sim, y los tamaños de compartimientos l0 y lf.
+por ahora vamos a dejarlos constantes y variar únicamente σ.
+En lo que entiendo los datos que tenemos son para cada σ una secuencia temporal S(t) que se relaciona
+con una distribución de tamaños P(l). Querriamos ver los datos en 2 dimensiones, para esto querriamos hacer
+una reducción de dimensionalidad con técnicas de Machine Learning.
+
+Empezamos generando una función que cree los datos según todos estos parámetros mencionados.
+"
+
+# ╔═╡ 3236ccd4-c6db-408a-9fea-86872ac8ebfa
+function GenData(N, lc, σ, l0, lf, time_sim)
+    # Generamos los tiempos de difusión y de tamaños de compartimientos
+    t = range(0, time_sim, length = 10000)
+    l = range(l0, lf, length = N)
+    # Generamos las distribuciones
+    P_l = P.(l, lc, σ)
+    # Calculamos la señal
+    S = S_han.(lc, σ, N, l0, lf, t)
+
+    return t, P_l, S
+end
+
+# ╔═╡ a9da50a6-ec72-456a-a8f6-c1a5006047c9
+md"Seguimos por una función que nos de la entrada y la salida con los datos generados" 
+
+# ╔═╡ 8777f316-6bea-412f-a8c2-eb7fc436f97b
+function GenINOUT(σs, N, t_sim, lc, l0, lf)
+    IN = []
+    OUT = []
+    for σ in σs
+        t, P_l, S = GenData(N, lc, σ, l0, lf, t_sim)
+        t = collect(t)
+        in = [t, S]
+        out = P_l
+        push!(IN, in)
+        push!(OUT, out)
+    end
+    return IN, OUT
+end
+
+# ╔═╡ a6ed3873-e541-467a-ba3f-295b686b2db8
+md"Testemos esta función de generación de datos"
+
+# ╔═╡ 74f86014-36c0-42f9-801b-e10d237d8d6a
+# Testeamos la función GenINOUT
+
+function Test_GenINOUT()
+    σs = 0.05:0.05:1 # Distitnos σ entre 0.01 y 1
+    σs = collect(σs)
+    N = 2000 # Dejamos fijo el número de compartimientos por ahora
+    t_sim = 1.0 # Tiempo a simular lo dejamos fijo
+    lc = 3.7 # Tamaño medio del compartimiento lo dejamos fijo
+    l0 = 0.05 # Tamaño mínimo del compartimiento lo dejamos fijo
+    lf = 7.5 # Tamaño máximo del compartimiento lo dejamos fijo
+    l = range(l0, lf, length = N)
+    IN, OUT = GenINOUT(σs, N, t_sim, lc, l0, lf)
+    println(size(IN))
+    println(size(OUT))
+
+    # Entonces consideramos las entradas como un arreglo de una serie temporal S(t)
+    # y un arreglo de tiempos t, y las salidas como un arreglo de una distribución de tamaños P(l)
+    # Apliquemos reducicón de la dimensionalidad a esto
+    pl = plot(xlabel=L"t"*" (s)", ylabel=L"S(t)" *" (U.A)", legend=:best, title = "Señal " * L"S_{Hahn}")
+    xlims!(0, 0.015)
+    for i in 1:length(IN)
+        plot!(pl,IN[i][1], IN[i][2], label = L"$\sigma$" * "= $(σs[i])")
+    end
+
+    pl2 = plot(xlabel = L"l"*" (μm)", ylabel = L"P(l)\:" * "(μm" * L"^{-1}" *")", legend=:best, title = "Distribución " * L"P(l)" * " asociadas a "* L"S(t)")
+    for i in 1:length(OUT)
+        plot!(pl2, l, OUT[i], label = L"$\sigma$" * "= $(σs[i])")
+    end
+
+	return pl, pl2
+end
+
+# ╔═╡ cce442eb-132e-4673-bf18-4a81e39436e0
+pl1, pl2 = Test_GenINOUT()
+
+# ╔═╡ aac3e5a5-2767-41b5-a422-9b5683e3123c
+pl1
+
+# ╔═╡ 6e5522a5-9324-4ccc-bd39-7a8de92421b3
+pl2
+
+# ╔═╡ 7f76cabc-ee33-451b-b845-9a47e5d430c8
+md"De estos datos generados vemos que tienen sentido las distribuciones de probabilidad encontrdas para cada $\sigma$ que tenemos pues fijamos la media lc en 3.7 $\mu m$. Ahora sí para cada señal S(t) de Hahn tenemos una distribución de probabilidad P(l) que nos permite determinar el tamaño medio de la región de interés."
+
+# ╔═╡ 4373218f-a0ba-4f68-a0e3-c09a050c414f
+md"# Pregunta
+Cuales son las Features a tener en cuenta para hacer la reducción de dimensionalidad? Porque hasta ahora lo que tengo son valores de $σ$ que me dan distintas series temporales $S(t)$ asociadas a una distribución de tamaños $P(l)$. En teoría por como está planteado el ejercicio la única variable que puedo cambiar es $σ$ y después recien en el desafio extra ver como cambia con el número de compartimientos $N$. Voy a seguir viendo como encararlo quizas el scatter plot que hacen para explicar PCA me esté nublando la generalidad de la técnica.
+"
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -170,6 +266,7 @@ Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 KernelDensity = "5ab0869b-81aa-558d-bb23-cbf5423bbe9b"
 LaTeXStrings = "b964fa9f-0449-5b57-a5c2-d3ea65f4040f"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
+PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
 QuadGK = "1fd47b50-473d-5c70-9696-f719f8f3bcdc"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 
@@ -178,6 +275,7 @@ Distributions = "~0.25.102"
 KernelDensity = "~0.6.7"
 LaTeXStrings = "~1.3.0"
 Plots = "~1.39.0"
+PlutoUI = "~0.7.52"
 QuadGK = "~2.9.1"
 """
 
@@ -187,7 +285,7 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.9.1"
 manifest_format = "2.0"
-project_hash = "d13572b4e20a37b9e1455b5ded4943119ddf30a7"
+project_hash = "ae26867434715692a0621f5ca2a38a281d8b90a7"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -199,6 +297,12 @@ weakdeps = ["ChainRulesCore", "Test"]
     [deps.AbstractFFTs.extensions]
     AbstractFFTsChainRulesCoreExt = "ChainRulesCore"
     AbstractFFTsTestExt = "Test"
+
+[[deps.AbstractPlutoDingetjes]]
+deps = ["Pkg"]
+git-tree-sha1 = "91bd53c39b9cbfb5ef4b015e8b582d344532bd0a"
+uuid = "6e696c72-6542-2067-7265-42206c756150"
+version = "1.2.0"
 
 [[deps.Adapt]]
 deps = ["LinearAlgebra", "Requires"]
@@ -516,6 +620,24 @@ git-tree-sha1 = "f218fe3736ddf977e0e772bc9a586b2383da2685"
 uuid = "34004b35-14d8-5ef3-9330-4cdb6864b03a"
 version = "0.3.23"
 
+[[deps.Hyperscript]]
+deps = ["Test"]
+git-tree-sha1 = "8d511d5b81240fc8e6802386302675bdf47737b9"
+uuid = "47d2ed2b-36de-50cf-bf87-49c2cf4b8b91"
+version = "0.0.4"
+
+[[deps.HypertextLiteral]]
+deps = ["Tricks"]
+git-tree-sha1 = "c47c5fa4c5308f27ccaac35504858d8914e102f9"
+uuid = "ac1192a8-f4b3-4bfe-ba22-af5b92cd3ab2"
+version = "0.9.4"
+
+[[deps.IOCapture]]
+deps = ["Logging", "Random"]
+git-tree-sha1 = "d75853a0bdbfb1ac815478bacd89cd27b550ace6"
+uuid = "b5f81e59-6552-4d32-b1f0-c071b021bf89"
+version = "0.2.3"
+
 [[deps.IntelOpenMP_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
 git-tree-sha1 = "ad37c091f7d7daf900963171600d7c1c5c3ede32"
@@ -713,6 +835,11 @@ git-tree-sha1 = "0d097476b6c381ab7906460ef1ef1638fbce1d91"
 uuid = "e6f89c97-d47a-5376-807f-9c37f3926c36"
 version = "1.0.2"
 
+[[deps.MIMEs]]
+git-tree-sha1 = "65f28ad4b594aebe22157d6fac869786a255b7eb"
+uuid = "6c6e2e6c-3030-632d-7369-2d6c69616d65"
+version = "0.1.4"
+
 [[deps.MKL_jll]]
 deps = ["Artifacts", "IntelOpenMP_jll", "JLLWrappers", "LazyArtifacts", "Libdl", "Pkg"]
 git-tree-sha1 = "eb006abbd7041c28e0d16260e50a24f8f9104913"
@@ -883,6 +1010,12 @@ version = "1.39.0"
     IJulia = "7073ff75-c697-5162-941a-fcdaad2a7d2a"
     ImageInTerminal = "d8c32880-2388-543b-8c61-d9f865259254"
     Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
+
+[[deps.PlutoUI]]
+deps = ["AbstractPlutoDingetjes", "Base64", "ColorTypes", "Dates", "FixedPointNumbers", "Hyperscript", "HypertextLiteral", "IOCapture", "InteractiveUtils", "JSON", "Logging", "MIMEs", "Markdown", "Random", "Reexport", "URIs", "UUIDs"]
+git-tree-sha1 = "e47cd150dbe0443c3a3651bc5b9cbd5576ab75b7"
+uuid = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
+version = "0.7.52"
 
 [[deps.PrecompileTools]]
 deps = ["Preferences"]
@@ -1102,6 +1235,11 @@ deps = ["Random", "Test"]
 git-tree-sha1 = "9a6ae7ed916312b41236fcef7e0af564ef934769"
 uuid = "3bb67fe8-82b1-5028-8e26-92a6c54297fa"
 version = "0.9.13"
+
+[[deps.Tricks]]
+git-tree-sha1 = "aadb748be58b492045b4f56166b5188aa63ce549"
+uuid = "410a4b4d-49e4-4fbc-ab6d-cb71b17b3775"
+version = "0.1.7"
 
 [[deps.URIs]]
 git-tree-sha1 = "b7a5e99f24892b6824a954199a45e9ffcc1c70f0"
@@ -1464,5 +1602,16 @@ version = "1.4.1+1"
 # ╟─96a63b43-251c-443e-ab3d-5746be896208
 # ╠═70f8934b-526f-4618-bc15-1e47d5851628
 # ╠═a849e4d9-9e60-492a-8afe-15f852e2cff6
+# ╟─253fc6a4-f653-4447-bdff-19284069638e
+# ╠═3236ccd4-c6db-408a-9fea-86872ac8ebfa
+# ╟─a9da50a6-ec72-456a-a8f6-c1a5006047c9
+# ╠═8777f316-6bea-412f-a8c2-eb7fc436f97b
+# ╟─a6ed3873-e541-467a-ba3f-295b686b2db8
+# ╠═74f86014-36c0-42f9-801b-e10d237d8d6a
+# ╠═cce442eb-132e-4673-bf18-4a81e39436e0
+# ╠═aac3e5a5-2767-41b5-a422-9b5683e3123c
+# ╠═6e5522a5-9324-4ccc-bd39-7a8de92421b3
+# ╟─7f76cabc-ee33-451b-b845-9a47e5d430c8
+# ╟─4373218f-a0ba-4f68-a0e3-c09a050c414f
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
