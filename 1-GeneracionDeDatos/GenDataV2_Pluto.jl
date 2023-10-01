@@ -12,7 +12,8 @@ begin
 	using LaTeXStrings
 	using KernelDensity
 	using QuadGK
-	using PlutoUI
+	using Statistics
+	using MultivariateStats
 end
 
 # ╔═╡ 86b00a58-e2a1-4518-9637-bbc00d99dbc5
@@ -20,10 +21,10 @@ md"# Generación de datos RMN Hahn
 Vamos a intentar generar los datos de una señal obtenida mediante RMN utilizando una secuencia de control de Hahn. La señal total $S(t)$ tiene la forma
 
 $\begin{equation}
-S(t) = \sum_l P(l)M_l(t),
+S(t) = \sum_{l_c} P(l_c)M_{l_c}(t),
 \end{equation}$
 
-donde $P(l)$ es la distribución de tamaños de los compartimientos del objeto a analizar y $M_l(t)$ la magnetización proveniente de los espínes confinados en cada compartimiento.
+donde $P(l_c)$ es la distribución de tamaños de los compartimientos del objeto a analizar y $M_{l_c}(t)$ la magnetización proveniente de los espínes confinados en cada compartimiento.
 "
 
 # ╔═╡ 70513b75-24f1-4e8b-b271-d5594a976516
@@ -33,28 +34,29 @@ md"En primer lugar importamos los paquetes utilizados"
 md"Necesitamos la función distribución LogNormal como modelo para la distribución de tamaño de los compartimentos, debido a que describe bien otros sistemas del Sistema Nervioso Central.
 
 $\begin{equation}
-P(l)=\frac{1}{l \ln (\sigma) \sqrt{2 \pi}} e^{-\frac{\left(\ln (l)-\ln \left(l_c\right)\right)^2}{2 \ln (\sigma)^2}},
+P(l_c)=\frac{1}{l_c \ln (\sigma) \sqrt{2 \pi}} e^{-\frac{\left(\ln (l_c)-\ln \left(l_{cm}\right)\right)^2}{2 \ln (\sigma)^2}},
 \end{equation}$
 
-donde $l_c$ es el tamaño medio del compartimento y $\sigma$ es el ancho de la distribución de probabilidad con respecto a su media."
+donde $l_{cm}$ es el tamaño medio del compartimento y $\sigma$ es el ancho de la distribución de probabilidad con respecto a su media."
 
 # ╔═╡ e114588e-e0f3-4672-9923-049d6c886bf9
-function P(l,lc,σ)
-    return ( exp( -(log(l) - log(lc))^2 / (2σ^2) ) ) / (l*σ*sqrt(2π))
-end;
+function P(lc,lcm,σ)
+    return ( exp( -(log(lc) - log(lcm))^2 / (2σ^2) ) ) / (lc*σ*sqrt(2π))
+end
 
 # ╔═╡ 1ae5f410-e8cf-4270-9900-f7724eda7486
 md"Testeamos esta distribución para distintos valores de $\sigma$ y $l_c$"
 
 # ╔═╡ b5ad32ce-1ca1-4992-992a-9a36dba31ab9
+# Testeamos la función P
 function TestP()
-    lcs = [0.7, 0.7, 1.0, 1.0, 3.7]
-    σs = [0.2, 0.4, 0.2, 0.4, 0.1]
-    l = range(0, 6, length=1000)
-    pl = plot(xlabel= L"l (\mu m)", ylabel= L"P(l)", legend=:best, title = "Distribución LogNormal")
-    for i in 1:length(lcs)
-        p = P.(l, lcs[i], σs[i])
-        plot!(pl, l, p, label=L"$lc$" * "= $(lcs[i]) "* L"μm\:" * L"$\sigma$" * "= $(σs[i])")
+    lcms = [0.7, 0.7, 1.0, 1.0, 3.7, 2] # Variamos el valor medio lcm
+    σs = [0.2, 0.4, 0.2, 0.4, 0.1, 0.25] # Variamos el ancho σ
+    lc = range(0, 10, length=1000)
+    pl = plot(xlabel= L"lc (\mu m)", ylabel= L"P(lc)", legend=:best, title = "Distribución LogNormal")
+    for i in 1:length(lcms)
+        p = P.(lc, lcms[i], σs[i])
+        plot!(pl, lc, p, label=L"$lcm$" * "= $(lcms[i]) "* L"μm\:" * L"$\sigma$" * "= $(σs[i])")
     end
     pl
 end;
@@ -66,10 +68,10 @@ TestP()
 md"Vamos a considerar una secuencia de control de RMN ”Hahn”
 
 $\begin{equation}
-\mathrm{M}_{l, \text { Hahn }}(t)=\exp \left\{-\gamma^2 G^2 D_0 \tau_c^2\left[t-\tau_c\left(3+\mathrm{e}^{-\frac{t}{\tau_c}}-4 \mathrm{e}^{-\frac{t}{2 \tau_c}}\right)\right]\right\}
+\mathrm{M}_{l_c, \text { Hahn }}(t)=\exp \left\{-\gamma^2 G^2 D_0 \tau_c^2\left[t-\tau_c\left(3+\mathrm{e}^{-\frac{t}{\tau_c}}-4 \mathrm{e}^{-\frac{t}{2 \tau_c}}\right)\right]\right\}
 \end{equation}$
 
-donde $\tau_c = l_c^2 /\left(2 D_0\right)$ está asociado a la longitud de correlación $l_c$ que define el tamaño de la cavidad que restringe el proceso de difusión que experimentan los espines. $\gamma$ es el factor giromagnetico del espin nuclear del proton, $G$ el gradiente externo aplicado y $D_0$ el coeficiente de difusión.
+donde $\tau_c = l_c^2 /\left(2 D_0\right)$ está asociado a la longitud de correlación $l$ que define el tamaño de la cavidad que restringe el proceso de difusión que experimentan los espines. $\gamma$ es el factor giromagnetico del espin nuclear del proton, $G$ el gradiente externo aplicado y $D_0$ el coeficiente de difusión.
 "
 
 # ╔═╡ e39c776f-2349-401d-8785-c6c163ea1993
@@ -84,13 +86,13 @@ end;
 md"Necesitamos entonces esta función $M_{l,Hahn}$"
 
 # ╔═╡ 69ea91b0-f8c6-4287-958c-0f7c5421ca25
-# Función M_l Magnetización de Hahn, para un tiempo t y un tamaño medio de compartimiento lc
-function Ml_Hahn(t, l)
-    τc = l^2 / (2 * D0)
+# Función M_l Magnetización de Hahn, para un tiempo t y un tamaño lc
+function Ml_Hahn(t, lc)
+    τc = lc^2 / (2 * D0)
     term1 = -γ^2 * G^2 * D0 * τc^2
     term2 = t - τc * (3 + exp(-t / τc) - 4 * exp(-t / (2 * τc)))
     return exp(term1 * term2)
-end;
+end
 
 # ╔═╡ c0031340-3092-47b3-bd5e-3596cd4300d5
 md"Testeamos esta función comparando con la figura 2a de [1] de la magnetización.
@@ -101,18 +103,16 @@ tic Resonance Imaging, Phys. Rev. Applied 14, 024088 (2020)
 doi.org/10.1103/PhysRevApplied.14.024088"
 
 # ╔═╡ ac9844d4-1fe1-44ea-81e8-4023227dd98c
+# Testeamos la función Ml_Hahn
 function Test_MHahn()
     time = range(0, 1, length=50000)
     factor = (γ^2 * G^2 * D0)^(1/3)
     list = [0.1, 0.15, 0.25, 0.4, 1.]
-    lc__values = [sqrt(2 * D0 * value / factor) for value in list]
-    pl = plot(xlabel=L"(γ^2 G^2 D_0)^{1/3} t", ylabel= "Magnetización " * L"M(t)/M(0)", legend=:best, title = "Magnetización de Hahn")
+    lc_values = [sqrt(2 * D0 * value / factor) for value in list] # Valores de lc para los cuales vamos a graficar
+    pl = plot(xlabel=L"(γ^2 G^2 D_0)^{1/3} t", ylabel= "Magnetización " * L"M_{lc}(t)/M_{lc}(0)", legend=:best, title = "Magnetización de Hahn")
     M = zeros(length(time))
     xlims!(0, 100)
-    for lc in lc__values
-        # for i in 1:length(time)
-        #     M[i] = Ml_Hahn(collect(time)[i], lc)/ Ml_Hahn(0, lc)
-        # end
+    for lc in lc_values
         M = [Ml_Hahn(t, lc) for t in time] ./ Ml_Hahn(0, lc)
         lc = Float32(lc)
         plot!(pl, time.*factor , M, label=L"l_c" * "= $lc μm")
@@ -124,19 +124,19 @@ end;
 Test_MHahn()
 
 # ╔═╡ 6dcfcb1e-18da-4e04-9d22-3c1f2e9c63d0
-md" Utilizamos la ecuación $S(t) = \sum_l P(l)M_l(t),$, para cada valor de $t$ en un rango. Además decidimos cuantos compartimientos $l$ tomar y su rango de tamaños en $\mu m$ 
+md" Utilizamos la ecuación $S(t) = \sum_{l_c} P(l_c)M_{l_c}(t),$, para cada valor de $t$ en un rango. Además decidimos cuantos compartimientos $l_c$ tomar y su rango de tamaños en $\mu m$ 
 
-Para $P(l)$ vamos a considerar un único valor $l_c=3,7 \mu m$ y generar varias distribuciones posibles variando $\sigma$.
+Para $P(l_c)$ vamos a considerar un único valor $l_{cm}=3,7 \mu m$ y generar varias distribuciones posibles variando $\sigma$.
 
-Para $M_{l, \text { Hahn }}(t)$ vamos a considerar un único valor de $\tau_c$ correspondiente a $l_c=3,7 \mu m$ y $D_0=10^{3} \mathrm{~\mu m}^2 / \mathrm{s}$."
+Para $M_{l_c, \text { Hahn }}(t)$ vamos a considerar un único valor de $D_0=10^{3} \mathrm{~\mu m}^2 / \mathrm{s}$."
 
 # ╔═╡ d341d1e4-abbc-48bf-b983-28c65e021066
 # Función S_hanh(t)
-function S_han(lc, σ, N, l0, lf, t)
-    l = range(l0, lf, length = N)
-    P_l = P.(l,lc, σ) # Consideramos media lc
-    M_l = Ml_Hahn.(t, lc) # Calculamos solo para un τc, si se quiere cambiar esto reemplazar lc por l
-    S = sum(M_l .* P_l)
+function S_han(lcm, σ, N, l0, lf, t)
+    lc = range(l0, lf, length = N) # Generamos los tamaños de compartimientos lc desde l0 hasta lf
+    P_lc = P.(lc,lcm, σ) # Consideramos media lcm y ancho σ
+    M_lc = Ml_Hahn.(t, lc) # Calculamos M_lc(t) para cada tamaño de compartimiento
+    S = sum(M_lc .* P_lc)
     return S
 end
 
@@ -146,23 +146,24 @@ md"Testeamos esta función considerando lo anterior"
 # ╔═╡ 70f8934b-526f-4618-bc15-1e47d5851628
 function Test_S()
 	N = 2000 # Numero de compartimientos
-	lc = 3.7 # Tamaño medio del compartimiento
-	# Rango de compartimientos simulados
+	lcm = 3.7 # Tamaño medio del compartimiento μm
+	# Rango de compartimientos simulados en μm
 	l0 = 0.05
-	lf = 10
-	time = range(0, 1, length = 10000) # Tiempo a simular
+	lf = 50
+	time = range(0, 1, length = 10000) # Tiempo a simular en s
 	σs = [0.01, 0.10, 0.25, 0.50, 1.0] # Distitnos σ
 	pl = plot(xlabel="t (s)", ylabel="S(t) (U.A)", legend=:best, title = "Señal " * L"$S_{Hahn}$")
 	xlims!(0, 0.015)
 	for σ in σs
-	    St = S_han.(3.7, σ, 2000, l0, lf, time)
+        S0 = S_han(3.7, σ, 2000, l0, lf, 0)
+	    St = S_han.(3.7, σ, 2000, l0, lf, time) ./ S0
 	    plot!(pl, time, St, label = L"$\sigma$" * "= $(σ)")
 	end
 	pl
 end;
 
 # ╔═╡ a849e4d9-9e60-492a-8afe-15f852e2cff6
-Test_S() # En el gráfico se superponen algúnos
+Test_S() # En el gráfico se superponen algúnas
 
 # ╔═╡ 253fc6a4-f653-4447-bdff-19284069638e
 md"Ahora vamos a generar un conjunto de datos de entrada y salida para distintos σ, en principio estos tambien cambian
@@ -176,15 +177,15 @@ Empezamos generando una función que cree los datos según todos estos parámetr
 "
 
 # ╔═╡ 3236ccd4-c6db-408a-9fea-86872ac8ebfa
-function GenData(N, lc, σ, l0, lf, time_sim)
+function GenData(N, lcm, σ, l0, lf, time_sim)
     # Generamos los tiempos de difusión y de tamaños de compartimientos
-    t = range(0, time_sim, length = 10000)
-    l = range(l0, lf, length = N)
+    t = range(0, time_sim, length = 5000)
+    lc = range(l0, lf, length = N)
     # Generamos las distribuciones
-    P_l = P.(l, lc, σ)
+    P_l = P.(lc, lcm, σ)
     # Calculamos la señal
-    S = S_han.(lc, σ, N, l0, lf, t)
-
+    S0 = S_han(lcm, σ, N, l0, lf, 0)
+    S = S_han.(lcm, σ, N, l0, lf, t) ./ S0
     return t, P_l, S
 end
 
@@ -192,11 +193,11 @@ end
 md"Seguimos por una función que nos de la entrada y la salida con los datos generados" 
 
 # ╔═╡ 8777f316-6bea-412f-a8c2-eb7fc436f97b
-function GenINOUT(σs, N, t_sim, lc, l0, lf)
+function GenINOUT(σs, N, t_sim, lcm, l0, lf)
     IN = []
     OUT = []
     for σ in σs
-        t, P_l, S = GenData(N, lc, σ, l0, lf, t_sim)
+        t, P_l, S = GenData(N, lcm, σ, l0, lf, t_sim)
         t = collect(t)
         in = [t, S]
         out = P_l
@@ -207,56 +208,152 @@ function GenINOUT(σs, N, t_sim, lc, l0, lf)
 end
 
 # ╔═╡ a6ed3873-e541-467a-ba3f-295b686b2db8
-md"Testemos esta función de generación de datos"
+md"Generamos datos para una colección de $\sigma$ entre 0.05 y 1 con un tamaño de 2000 compartimientos entre 0.05 $\mu$m y 10 $\mu$m de $l_{cm}$  = 3.7 $\mu$m. Grafiquemos los datos de $S(t)$ y $P(l_c)$"
 
 # ╔═╡ 74f86014-36c0-42f9-801b-e10d237d8d6a
 # Testeamos la función GenINOUT
-
-function Test_GenINOUT()
-    σs = 0.05:0.05:1 # Distitnos σ entre 0.01 y 1
-    σs = collect(σs)
-    N = 2000 # Dejamos fijo el número de compartimientos por ahora
-    t_sim = 1.0 # Tiempo a simular lo dejamos fijo
-    lc = 3.7 # Tamaño medio del compartimiento lo dejamos fijo
-    l0 = 0.05 # Tamaño mínimo del compartimiento lo dejamos fijo
-    lf = 7.5 # Tamaño máximo del compartimiento lo dejamos fijo
-    l = range(l0, lf, length = N)
-    IN, OUT = GenINOUT(σs, N, t_sim, lc, l0, lf)
-    println(size(IN))
-    println(size(OUT))
-
-    # Entonces consideramos las entradas como un arreglo de una serie temporal S(t)
-    # y un arreglo de tiempos t, y las salidas como un arreglo de una distribución de tamaños P(l)
-    # Apliquemos reducicón de la dimensionalidad a esto
-    pl = plot(xlabel=L"t"*" (s)", ylabel=L"S(t)" *" (U.A)", legend=:best, title = "Señal " * L"S_{Hahn}")
-    xlims!(0, 0.015)
-    for i in 1:length(IN)
-        plot!(pl,IN[i][1], IN[i][2], label = L"$\sigma$" * "= $(σs[i])")
-    end
-
-    pl2 = plot(xlabel = L"l"*" (μm)", ylabel = L"P(l)\:" * "(μm" * L"^{-1}" *")", legend=:best, title = "Distribución " * L"P(l)" * " asociadas a "* L"S(t)")
-    for i in 1:length(OUT)
-        plot!(pl2, l, OUT[i], label = L"$\sigma$" * "= $(σs[i])")
-    end
-
-	return pl, pl2
+begin
+	σss = 0.05:0.05:1 # Distitnos σ entre 0.01 y 1
+	σss = collect(σss)
+	N = 2000 # Dejamos fijo el número de compartimientos por ahora
+	t_sim = 1.0 # Tiempo a simular lo dejamos fijo
+	lcmean = 3.7 # Tamaño medio del compartimiento lo dejamos fijo
+	l0 = 0.05 # Tamaño mínimo del compartimiento lo dejamos fijo
+	lf = 10 # Tamaño máximo del compartimiento lo dejamos fijo
+	lcs = range(l0, lf, length = N) # Generamos los tamaños de compartimientos lc desde l0 hasta lf
+	lcs = collect(lcs) # Lo pasamos a formato vector
+	
+	In, Out = GenINOUT(σss, N, t_sim, lcmean, l0, lf) # Generamos los datos para los distintos σ
 end
 
-# ╔═╡ cce442eb-132e-4673-bf18-4a81e39436e0
-pl1, pl2 = Test_GenINOUT()
-
 # ╔═╡ aac3e5a5-2767-41b5-a422-9b5683e3123c
-pl1
+begin
+	# Graficamos los datos generados de S(t)
+	pl = plot(xlabel=L"t"*" (s)", ylabel=L"S(t)" *" (U.A)", legend=:best, title = "Señal " * L"S_{Hahn}")
+	xlims!(0, 0.015)
+	for i in 1:length(In)
+	    plot!(pl,In[i][1], In[i][2], label = L"$\sigma$" * "= $(σss[i])")
+	end
+	pl
+end
 
 # ╔═╡ 6e5522a5-9324-4ccc-bd39-7a8de92421b3
-pl2
+begin
+	# Graficamos los datos generados de P(lc)
+	
+	pl2 = plot(xlabel = L"lc"*" (μm)", ylabel = L"P(lc)\:" * "(μm" * L"^{-1}" *")", legend=:best, title = "Distribución " * L"P(lc)" * " asociadas a "* L"S(t)")
+	for i in 1:length(Out)
+	    plot!(pl2, lcs, Out[i], label = L"$\sigma$" * "= $(σss[i])")
+	end
+	pl2
+end
 
 # ╔═╡ 7f76cabc-ee33-451b-b845-9a47e5d430c8
-md"De estos datos generados vemos que tienen sentido las distribuciones de probabilidad encontrdas para cada $\sigma$ que tenemos pues fijamos la media lc en 3.7 $\mu m$. Ahora sí para cada señal S(t) de Hahn tenemos una distribución de probabilidad P(l) que nos permite determinar el tamaño medio de la región de interés."
+md"De estos datos generados vemos que tienen sentido las distribuciones de probabilidad encontrdas para cada $\sigma$ que tenemos pues fijamos la media $l_{cm}$ en 3.7 $\mu m$. Ahora sí para cada señal S(t) de Hahn tenemos una distribución de probabilidad P(l) que nos permite determinar el tamaño medio de la región de interés."
+
+# ╔═╡ 751e2d3c-c317-42a5-b6c0-37ce09435956
+md"# Principal component analysis"
+
+# ╔═╡ 7fbe5b33-4449-4fc3-8370-9a333dfcda22
+md"Con este conjunto de datos de entrada y salida lo que queremos es hacer un gráfico en 2 dimensiones para poder visualizar, por ello debemos hacer uso de técnicas de reducción de dimensionalidad con téncincas de Machine Learning. Para esto usamos en primer lugar PCA tanto para los datos de entrada $S(t)$ como los datos de salida $P(l)$ esperando tener una componente principal en ambos.
+
+Para hacer reducción de dimensionalidad con PCA consideramos primero los datos de entrada. Tenemos distintas series temporales para cada $σ$. Cada una de estas sería una medición entonces hay un conjunto de 10000 puntos de $t$ (tiempos simulados) en un espacio de 20 dimensiones de $σ$. En este caso al aplicar PCA lo que vamos a encontrar son vectores propios correspondientes a patrones instantaneos a traves de las
+series temporales.
+
+Para el caso de salida es lo mismo solo que estamos considerando $N$ puntos de $l_c$ en un espacio de 20 dimensiones de $σ$. En este caso al aplicar PCA 
+lo que vamos a encontrar son vectores propios correspondientes a patrones de distribuciones de tamaños a traves de las series temporales.
+"
+
+# ╔═╡ 3c735b29-4a46-49cb-88e2-6d7f36b186e1
+begin
+	# Consideremos entonces el arreglo de datos de entrada IN, y el arreglo de datos de salida OUT
+	dataIN = zeros(length(In[1][2]), length(σss))
+	dataOUT = zeros(length(Out[1]), length(σss))
+	
+	for i in 1:length(σss)
+	    dataIN[:,i] = In[i][2] # En [i][2] están las series S(t)
+	    dataOUT[:,i] = Out[i]
+	end
+end;
+
+# ╔═╡ 1bf24397-80a8-4dc8-b49e-24a02044d51d
+begin 
+	# Hagamos el PCA para los datos de entrada
+	pca_modelIN = fit(PCA, dataIN; maxoutdim = 2)  # Reducir a un máximo de 2 componentes principales
+
+	# Transformamos los datos de entrada al espacio de menor dimensión
+	reduced_dataIN = transform(pca_modelIN, dataIN)
+
+	# Obtenemos los componentes principales
+	pcsIN = principalvars(pca_modelIN)
+
+	# Obtenemos la variaza en porcentaje para cada componente principal
+	explained_varianceIN = pcsIN / sum(pcsIN)
+end;
+
+# ╔═╡ 2d336a19-eecd-4d75-924e-06835d2643e6
+# Veamos esta varianza en un gráfico de barras
+bar(explained_varianceIN, title="Varianza en porcentaje datos entrada",label = false, xlabel="Componente principal", ylabel="Varianza en porcentaje")
+
+# ╔═╡ 87b56b9a-170b-4abe-a34b-9b088b3c5f6b
+md"Teniendo en cuenta esto vemos que la mayor varianza se encuentra en la 1era componente principal podemos prescindir de las demas para hacer reducción de dimensionalidad
+"
+
+# ╔═╡ e8db9dcd-0b19-4478-90a2-144f44a0788d
+reductedIN = reduced_dataIN[1,:] # Tomamos solo la 1era componente principal
+
+# ╔═╡ 3685b571-22af-49f7-be03-fa6bec56d84a
+md"Hacemos lo mismo con los datos de salida"
+
+# ╔═╡ e21ee89e-c2ef-42d6-9e19-b425e53d59df
+begin
+	pca_modelOUT = fit(PCA, dataOUT; maxoutdim = 2)  # Reducir a 2 componentes principales
+	
+	# Transformamos los datos de salida al espacio de menor dimensión
+	reduced_dataOUT = transform(pca_modelOUT, dataOUT)
+	
+	# Obtenemos los componentes principales
+	pcsOUT = principalvars(pca_modelOUT)
+	
+	# Obtenemos la variaza en porcentaje para cada componente principal
+	explained_varianceOUT = pcsOUT / sum(pcsOUT)
+end
+
+# ╔═╡ 27fb169c-1c52-470a-9306-3d089a5c7032
+# Veamos esta varianza en un gráfico de barras
+bar(explained_varianceOUT, title="Varianza en porcentaje datos salida", label = false, legend=:topright, xlabel="Componente principal", ylabel="Varianza en porcentaje")
+
+
+# ╔═╡ 12a9b45d-1f8f-4745-b8d4-007964e06a21
+md"Teniendo en cuenta esto vemos que la mayor varianza se encuentra en la 1era componente principal podemos prescindir de las demas para hacer reducción de dimensionalidad"
+
+# ╔═╡ 21fa68b3-fda6-44b0-bbeb-9b7a10b60090
+reductedOUT = reduced_dataOUT[1,:] # Tomamos solo la 1era componente principal
+
+# ╔═╡ ad1bd11a-eec9-476b-ae55-c0bd918076d2
+md"Graficamos los datos de entrada y salida reducidos"
+
+# ╔═╡ fe7bed6a-73b0-4068-98d6-fc633d29f0f9
+scatter(reductedIN, reductedOUT, title="Datos de " *L"S(t)"*" vs "*L"P(l_c)" *" reducidos", legend=:topleft, xlabel="Principal Component "*L"S(t)_{\sigma}", ylabel="Principal Component " * L"P(l_c)_{\sigma}", label = false)
+
+# ╔═╡ 0ebec8b7-bb0a-4cea-8546-3b62d5861d21
+md"# Veamos que pasa con las otras componentes"
+
+# ╔═╡ 3fc142e3-062f-4dbe-8b45-e9fda617e4b8
+scatter(reduced_dataIN[1,:], reduced_dataOUT[2,:],title="Datos de " *L"S(t)"*" vs "*L"P(l_c)" *" reducidos", legend=:topleft, xlabel="Principal Component "*L"S(t)_{\sigma}", ylabel="Second Component " * L"P(l_c)_{\sigma}", label = false)
+
+# ╔═╡ 7adb49ec-8619-49e6-9c57-84c4af3f00af
+scatter(reduced_dataIN[2,:], reduced_dataOUT[1,:],title="Datos de " *L"S(t)"*" vs "*L"P(l_c)" *" reducidos", legend=:topleft, xlabel="Second Component "*L"S(t)_{\sigma}", ylabel="Principal Component " * L"P(l_c)_{\sigma}", label = false)
+
+# ╔═╡ aa7fb86d-d60f-439b-b307-496c2442af1e
+scatter(reduced_dataIN[2,:], reduced_dataOUT[2,:],title="Datos de " *L"S(t)"*" vs "*L"P(l_c)" *" reducidos", legend=:topleft, xlabel="Second Component "*L"S(t)_{\sigma}", ylabel="Second Component " * L"P(l_c)_{\sigma}", label = false)
+
+# ╔═╡ cf12fc29-acc9-464a-9d14-38c32f707627
+
 
 # ╔═╡ 4373218f-a0ba-4f68-a0e3-c09a050c414f
 md"# Pregunta
-Cuales son las Features a tener en cuenta para hacer la reducción de dimensionalidad? Porque hasta ahora lo que tengo son valores de $σ$ que me dan distintas series temporales $S(t)$ asociadas a una distribución de tamaños $P(l)$. En teoría por como está planteado el ejercicio la única variable que puedo cambiar es $σ$ y después recien en el desafio extra ver como cambia con el número de compartimientos $N$. Voy a seguir viendo como encararlo quizas el scatter plot que hacen para explicar PCA me esté nublando la generalidad de la técnica.
+Si es que lo anterior no está bien cuales son las Features a tener en cuenta para hacer la reducción de dimensionalidad? Porque hasta ahora lo que tengo son valores de $σ$ que me dan distintas series temporales $S(t)$ asociadas a una distribución de tamaños $P(l_c)$. En teoría por como está planteado el ejercicio la única variable que puedo cambiar es $σ$ y después recien en el desafio extra ver como cambia con el número de compartimientos $N$.
 "
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
@@ -265,17 +362,18 @@ PLUTO_PROJECT_TOML_CONTENTS = """
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 KernelDensity = "5ab0869b-81aa-558d-bb23-cbf5423bbe9b"
 LaTeXStrings = "b964fa9f-0449-5b57-a5c2-d3ea65f4040f"
+MultivariateStats = "6f286f6a-111f-5878-ab1e-185364afe411"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
-PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
 QuadGK = "1fd47b50-473d-5c70-9696-f719f8f3bcdc"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 
 [compat]
 Distributions = "~0.25.102"
 KernelDensity = "~0.6.7"
 LaTeXStrings = "~1.3.0"
+MultivariateStats = "~0.10.2"
 Plots = "~1.39.0"
-PlutoUI = "~0.7.52"
 QuadGK = "~2.9.1"
 """
 
@@ -285,7 +383,7 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.9.1"
 manifest_format = "2.0"
-project_hash = "ae26867434715692a0621f5ca2a38a281d8b90a7"
+project_hash = "5f2070ad2f804b1a06f35b36aee691338798e5c5"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -297,12 +395,6 @@ weakdeps = ["ChainRulesCore", "Test"]
     [deps.AbstractFFTs.extensions]
     AbstractFFTsChainRulesCoreExt = "ChainRulesCore"
     AbstractFFTsTestExt = "Test"
-
-[[deps.AbstractPlutoDingetjes]]
-deps = ["Pkg"]
-git-tree-sha1 = "91bd53c39b9cbfb5ef4b015e8b582d344532bd0a"
-uuid = "6e696c72-6542-2067-7265-42206c756150"
-version = "1.2.0"
 
 [[deps.Adapt]]
 deps = ["LinearAlgebra", "Requires"]
@@ -317,6 +409,18 @@ weakdeps = ["StaticArrays"]
 [[deps.ArgTools]]
 uuid = "0dad84c5-d112-42e6-8d28-ef12dabb789f"
 version = "1.1.1"
+
+[[deps.Arpack]]
+deps = ["Arpack_jll", "Libdl", "LinearAlgebra", "Logging"]
+git-tree-sha1 = "9b9b347613394885fd1c8c7729bfc60528faa436"
+uuid = "7d9fca2a-8960-54d3-9f78-7d1dccf2cb97"
+version = "0.5.4"
+
+[[deps.Arpack_jll]]
+deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "Libdl", "OpenBLAS_jll", "Pkg"]
+git-tree-sha1 = "5ba6c757e8feccf03a1554dfaf3e26b3cfc7fd5e"
+uuid = "68821587-b530-5797-8361-c406ea357684"
+version = "3.5.1+1"
 
 [[deps.Artifacts]]
 uuid = "56f22d72-fd6d-98f1-02f0-08ddc0907c33"
@@ -620,24 +724,6 @@ git-tree-sha1 = "f218fe3736ddf977e0e772bc9a586b2383da2685"
 uuid = "34004b35-14d8-5ef3-9330-4cdb6864b03a"
 version = "0.3.23"
 
-[[deps.Hyperscript]]
-deps = ["Test"]
-git-tree-sha1 = "8d511d5b81240fc8e6802386302675bdf47737b9"
-uuid = "47d2ed2b-36de-50cf-bf87-49c2cf4b8b91"
-version = "0.0.4"
-
-[[deps.HypertextLiteral]]
-deps = ["Tricks"]
-git-tree-sha1 = "c47c5fa4c5308f27ccaac35504858d8914e102f9"
-uuid = "ac1192a8-f4b3-4bfe-ba22-af5b92cd3ab2"
-version = "0.9.4"
-
-[[deps.IOCapture]]
-deps = ["Logging", "Random"]
-git-tree-sha1 = "d75853a0bdbfb1ac815478bacd89cd27b550ace6"
-uuid = "b5f81e59-6552-4d32-b1f0-c071b021bf89"
-version = "0.2.3"
-
 [[deps.IntelOpenMP_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
 git-tree-sha1 = "ad37c091f7d7daf900963171600d7c1c5c3ede32"
@@ -835,11 +921,6 @@ git-tree-sha1 = "0d097476b6c381ab7906460ef1ef1638fbce1d91"
 uuid = "e6f89c97-d47a-5376-807f-9c37f3926c36"
 version = "1.0.2"
 
-[[deps.MIMEs]]
-git-tree-sha1 = "65f28ad4b594aebe22157d6fac869786a255b7eb"
-uuid = "6c6e2e6c-3030-632d-7369-2d6c69616d65"
-version = "0.1.4"
-
 [[deps.MKL_jll]]
 deps = ["Artifacts", "IntelOpenMP_jll", "JLLWrappers", "LazyArtifacts", "Libdl", "Pkg"]
 git-tree-sha1 = "eb006abbd7041c28e0d16260e50a24f8f9104913"
@@ -884,6 +965,12 @@ uuid = "a63ad114-7e13-5084-954f-fe012c677804"
 [[deps.MozillaCACerts_jll]]
 uuid = "14a3606d-f60d-562e-9121-12d972cd8159"
 version = "2022.10.11"
+
+[[deps.MultivariateStats]]
+deps = ["Arpack", "LinearAlgebra", "SparseArrays", "Statistics", "StatsAPI", "StatsBase"]
+git-tree-sha1 = "68bf5103e002c44adfd71fea6bd770b3f0586843"
+uuid = "6f286f6a-111f-5878-ab1e-185364afe411"
+version = "0.10.2"
 
 [[deps.NaNMath]]
 deps = ["OpenLibm_jll"]
@@ -1010,12 +1097,6 @@ version = "1.39.0"
     IJulia = "7073ff75-c697-5162-941a-fcdaad2a7d2a"
     ImageInTerminal = "d8c32880-2388-543b-8c61-d9f865259254"
     Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
-
-[[deps.PlutoUI]]
-deps = ["AbstractPlutoDingetjes", "Base64", "ColorTypes", "Dates", "FixedPointNumbers", "Hyperscript", "HypertextLiteral", "IOCapture", "InteractiveUtils", "JSON", "Logging", "MIMEs", "Markdown", "Random", "Reexport", "URIs", "UUIDs"]
-git-tree-sha1 = "e47cd150dbe0443c3a3651bc5b9cbd5576ab75b7"
-uuid = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
-version = "0.7.52"
 
 [[deps.PrecompileTools]]
 deps = ["Preferences"]
@@ -1235,11 +1316,6 @@ deps = ["Random", "Test"]
 git-tree-sha1 = "9a6ae7ed916312b41236fcef7e0af564ef934769"
 uuid = "3bb67fe8-82b1-5028-8e26-92a6c54297fa"
 version = "0.9.13"
-
-[[deps.Tricks]]
-git-tree-sha1 = "aadb748be58b492045b4f56166b5188aa63ce549"
-uuid = "410a4b4d-49e4-4fbc-ab6d-cb71b17b3775"
-version = "0.1.7"
 
 [[deps.URIs]]
 git-tree-sha1 = "b7a5e99f24892b6824a954199a45e9ffcc1c70f0"
@@ -1608,10 +1684,28 @@ version = "1.4.1+1"
 # ╠═8777f316-6bea-412f-a8c2-eb7fc436f97b
 # ╟─a6ed3873-e541-467a-ba3f-295b686b2db8
 # ╠═74f86014-36c0-42f9-801b-e10d237d8d6a
-# ╠═cce442eb-132e-4673-bf18-4a81e39436e0
 # ╠═aac3e5a5-2767-41b5-a422-9b5683e3123c
 # ╠═6e5522a5-9324-4ccc-bd39-7a8de92421b3
 # ╟─7f76cabc-ee33-451b-b845-9a47e5d430c8
+# ╟─751e2d3c-c317-42a5-b6c0-37ce09435956
+# ╟─7fbe5b33-4449-4fc3-8370-9a333dfcda22
+# ╠═3c735b29-4a46-49cb-88e2-6d7f36b186e1
+# ╠═1bf24397-80a8-4dc8-b49e-24a02044d51d
+# ╠═2d336a19-eecd-4d75-924e-06835d2643e6
+# ╟─87b56b9a-170b-4abe-a34b-9b088b3c5f6b
+# ╠═e8db9dcd-0b19-4478-90a2-144f44a0788d
+# ╟─3685b571-22af-49f7-be03-fa6bec56d84a
+# ╠═e21ee89e-c2ef-42d6-9e19-b425e53d59df
+# ╠═27fb169c-1c52-470a-9306-3d089a5c7032
+# ╟─12a9b45d-1f8f-4745-b8d4-007964e06a21
+# ╠═21fa68b3-fda6-44b0-bbeb-9b7a10b60090
+# ╟─ad1bd11a-eec9-476b-ae55-c0bd918076d2
+# ╠═fe7bed6a-73b0-4068-98d6-fc633d29f0f9
+# ╟─0ebec8b7-bb0a-4cea-8546-3b62d5861d21
+# ╠═3fc142e3-062f-4dbe-8b45-e9fda617e4b8
+# ╠═7adb49ec-8619-49e6-9c57-84c4af3f00af
+# ╠═aa7fb86d-d60f-439b-b307-496c2442af1e
+# ╠═cf12fc29-acc9-464a-9d14-38c32f707627
 # ╟─4373218f-a0ba-4f68-a0e3-c09a050c414f
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
