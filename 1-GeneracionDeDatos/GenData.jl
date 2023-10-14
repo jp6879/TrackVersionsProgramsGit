@@ -1,8 +1,5 @@
 # Generación de datos de RMN Hahn
-using Plots
-using Distributions
-using Random
-using LaTeXStrings
+using CSV
 
 # Poner una semilla random para reproducibilidad (opcional)
 # Random.seed!(0)
@@ -48,6 +45,17 @@ end
 
 #------------------------------------------------------------------------------------------
 
+# Generación de Señal de Hahn y distribución de tamaños de compartimientos
+
+# N: cantidad de compartimientos lc
+# lcm: tamaño medio de compartimiento
+# σ: desviación estándar de compartimiento
+# l0: tamaño mínimo de compartimiento
+# lf: tamaño máximo de compartimiento
+# time_sim: tiempo máximo de simulación
+# time_sample_lenght: cantidad de puntos de tiempo
+
+
 function GenData(N, lcm, σ, l0, lf, time_sim, time_sample_lenght)
     # Generamos los tiempos de difusión y de tamaños de compartimientos
     t = range(0, time_sim, length = time_sample_lenght)
@@ -63,3 +71,76 @@ function GenData(N, lcm, σ, l0, lf, time_sim, time_sample_lenght)
 end
 
 #------------------------------------------------------------------------------------------
+
+# Generación de datos en CSV
+# N numero de compartimientos
+# time_sample_lenght cantidad de puntos de tiempo
+# l0 tamaño mínimo de compartimiento
+# lf tamaño máximo de compartimiento
+# tf tiempo máximo de simulación
+# lcms vector de tamaños medios de compartimientos
+# σs vector de desviaciones estándar
+
+function GenCSVData(N, time_sample_lenght, l0, lf, tf, lcms, σs)
+
+    function fill_missing(value, column, max_lenght)
+        if length(column) < max_lenght
+            return vcat(column,fill(value, max_lenght - length(column)))
+        else
+            return column
+        end
+    end
+
+
+    for lcm in lcms
+        for σ in σs
+            t, l, S, P_l = GenData(N, lcm, σ, l0, lf, tf, time_sample_lenght)
+            max_lenght = maximum(length.([l,t]))
+            
+            t = fill_missing(0, t, max_lenght)
+            l = fill_missing(0, l, max_lenght)
+            S = fill_missing(0, S, max_lenght)
+            P_l = fill_missing(0, P_l, max_lenght)
+
+            df = DataFrame(t = t, l = l, S = S, P_l = P_l)
+            CSV.write("5-Maestría/TrackVersionsProgramsGit/1-GeneracionDeDatos/DatosCSV/$(lcm)_$(σ)l_2k.csv", df)
+        end
+    end
+end
+
+#------------------------------------------------------------------------------------------
+
+# Lectura de los datos que se generaron
+# mismos parámetros que GenCSVData
+
+function ReadCSVData(N, time_sample_lenght, l0, lf, tf, lcms, σs)
+    t = range(0, tf, length = time_sample_lenght)
+    lc = range(l0, lf, length = N)
+    length_t = length(t)
+    length_lc = length(lc)
+    max_lenght = maximum(length.([t, lc]))
+
+    Probabilitys = zeros(length(lcms), length(σs), max_lenght)
+    Signals = zeros(length(lcms), length(σs), max_lenght)
+
+    for lcm in lcms
+        # pl = plot(xlabel = L"$t$ (s)", ylabel = L"S(t)", title = L"Señal de Hahn, $l_{cm} = $"*" $(lcm)")
+        # pl2 = plot(xlabel = L"$l_c$ (μm)", ylabel = L"$P(l_c)$", title = L"Distribución de tamaños $l_{cm} = $"*" $(lcm)")
+        # xlims!(pl, (0,tf))
+        # xlims!(pl2, (0,lf))
+        for σ in σs
+            df = CSV.read("5-Maestría/TrackVersionsProgramsGit/1-GeneracionDeDatos/DatosCSV/$(lcm)_$(σ)l_2k.csv", DataFrame)
+            # plot!(pl,df.t[1:length_t], df.S[1:length_t], label = "lcm = $(lcm), σ = $(σ)", legend = false)
+            # plot!(pl2,df.l, df.P_l, label = "lcm = $(lcm), σ = $(σ)", legend = false)
+
+            Probabilitys[findall(x -> x == lcm, lcms), findall(x -> x == σ, σs), :] = df.P_l
+            Signals[findall(x -> x == lcm, lcms), findall(x -> x == σ, σs), :] = df.S
+
+        end
+        # display(pl)
+        # display(pl2)
+    end
+
+    return Probabilitys, Signals
+
+end
